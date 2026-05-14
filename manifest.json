@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "知识星球助手 (Zsxq Assistant)",
+  "version": "0.4.4",
+  "description": "辅助管理知识星球内容，支持 PDF 下载及上传辅助。",
+  "permissions": [
+    "downloads",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.zsxq.com/*"
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html"
+  },
+  "background": {
+    "service_worker": "src/background/main.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.zsxq.com/*"
+      ],
+      "js": ["src/content/index.js"],
+      "css": ["src/content/index.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/config/*", "src/utils/*", "src/core/*"],
+      "matches": ["https://*.zsxq.com/*"]
+    }
+  ]
+}

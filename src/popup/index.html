@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>知识星球助手 - Dashboard</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div class="header">
+    <h3>星球助手 <span id="version">v0.4.4</span></h3>
+    <div class="actions">
+      <button id="btn-scan" class="primary-btn">刷新当前页</button>
+      <button id="btn-deep-scan" class="primary-btn" style="background:#673ab7;">获取下载量</button>
+      <button id="btn-stop-deep" class="danger-btn" style="display:none;">停止获取</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="files">文件列表</div>
+    <div class="tab" data-tab="audio">音频采集</div>
+    <div class="tab" data-tab="upload">上传辅助</div>
+    <div class="tab" data-tab="logs">操作日志</div>
+  </div>
+
+  <div id="tab-files" class="tab-content active">
+    <!-- Existing files tab content -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <select id="select-institution">
+          <option value="">全部机构</option>
+        </select>
+        <select id="select-sort">
+          <option value="count_desc" selected>下载量 ⬇</option>
+          <option value="time_desc">时间 ⬇</option>
+          <option value="time_asc">时间 ⬆</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-bar">
+      <div class="setting-item">
+        <span>下载前 <input type="number" id="download-limit" value="5" min="1"> 个</span>
+      </div>
+      <div class="setting-item">
+        <span>下载量 > <input type="number" id="min-count" value="0" min="0"> 时下载</span>
+      </div>
+    </div>
+    
+    <div class="control-bar">
+      <button id="btn-start-batch" class="primary-btn">开始批量下载</button>
+      <button id="btn-stop-batch" class="danger-btn" style="display:none;">停止下载</button>
+      <button id="btn-export-list" class="primary-btn" style="background:#4caf50;">导出列表数据</button>
+      <button id="btn-clear-files" class="danger-btn">清空列表</button>
+    </div>
+
+    <div class="stats">
+      <span>当前显示: <b id="count-found">0</b></span>
+      <span>累计完成: <b id="count-done">0</b></span>
+    </div>
+    
+    <!-- 列表表头 -->
+    <div class="list-header">
+      <span class="col-name">文件名</span>
+      <span class="col-time">上传时间</span>
+      <span class="col-count">量</span>
+      <span class="col-status">操作</span>
+    </div>
+    <ul id="file-list" class="list">
+      <li class="empty-hint">点击“刷新当前页”扫描内容</li>
+    </ul>
+  </div>
+
+  <div id="tab-audio" class="tab-content">
+    <div class="audio-panel">
+      <div class="control-group">
+      <label>数据采集:</label>
+      <button id="btn-go-audio" class="primary-btn" style="background:#009688;">1. 进入音频搜索页</button>
+      <button id="btn-scan-audio" class="primary-btn">2. 扫描当前列表</button>
+      <button id="btn-deep-scan-audio" class="primary-btn" style="background:#673ab7;">3. 获取下载量 (Deep Scan)</button>
+    </div>
+    <div class="control-group">
+      <label>批量操作:</label>
+      <button id="btn-batch-audio" class="primary-btn" style="background:#f44336;">开始批量下载</button>
+      <button id="btn-export-audio" class="primary-btn" style="background:#2196F3;">导出 CSV</button>
+      <button id="btn-clear-audio" class="danger-btn">清空列表</button>
+    </div>
+  </div>
+  <div class="stats">
+    <span>已发现音频: <b id="audio-found-count">0</b></span>
+  </div>
+  <div class="list-header audio-item">
+    <span class="col-name">音频标题</span>
+    <span class="col-time">上传时间</span>
+    <span class="col-count">量</span>
+    <span class="col-status">操作</span>
+  </div>    <ul id="audio-list" class="list">
+      <li class="empty-hint">进入音频搜索页后点击“扫描”</li>
+    </ul>
+  </div>
+
+  <div id="tab-upload" class="tab-content">
+    <div class="upload-panel">
+      <div class="control-group">
+        <label>流程控制:</label>
+        <button id="btn-open-post" class="primary-btn">1. 进入发布模式</button>
+        <button id="btn-trigger-upload" class="primary-btn">2. 呼出文件选择</button>
+      </div>
+      <div class="control-group">
+        <label>智能设置:</label>
+        <div class="setting-row">
+          <input type="checkbox" id="check-auto-title" checked>
+          <span>将文件名自动填入标题</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-logs" class="tab-content">
+    <div class="log-actions">
+      <button id="btn-export-logs" class="primary-btn">导出日志</button>
+      <button id="btn-clear-logs" class="danger-btn">清空日志</button>
+    </div>
+    <div id="log-viewer" class="log-container"></div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+/**
+ * Dashboard 样式 v0.4.1 - 知识星球助手
+ */
+
+body { width: 420px; height: 580px; margin: 0; padding: 12px; font-family: sans-serif; font-size: 13px; background: #f4f6f8; display: flex; flex-direction: column; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.header h3 { margin: 0; }
+button { cursor: pointer; border: none; border-radius: 4px; padding: 6px 10px; font-size: 11px; }
+.primary-btn { background: #3c78d8; color: white; }
+.danger-btn { background: #ea4335; color: white; }
+
+.tabs { display: flex; margin-bottom: 10px; border-bottom: 1px solid #ddd; }
+.tab { flex: 1; text-align: center; padding: 8px; cursor: pointer; color: #666; }
+.tab.active { color: #3c78d8; border-bottom: 2px solid #3c78d8; font-weight: bold; }
+.tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+.tab-content.active { display: flex; }
+
+.filter-bar, .settings-bar, .control-bar { background: white; padding: 8px; border-radius: 6px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
+.filter-group { display: flex; gap: 5px; width: 100%; }
+select { padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; }
+#select-institution { flex: 2; }
+#select-sort { flex: 1; }
+
+.stats { display: flex; justify-content: space-between; padding: 2px 5px; color: #888; font-size: 11px; }
+
+/* 列表网格布局 */
+.list-header, .file-item { display: grid; grid-template-columns: 1fr 100px 40px 50px; align-items: center; gap: 5px; padding: 8px; border-bottom: 1px solid #eee; }
+.list-header { font-weight: bold; color: #555; background: #eaeff2; border-radius: 4px 4px 0 0; font-size: 11px; }
+.list { flex: 1; list-style: none; padding: 0; margin: 0; background: white; border-radius: 0 0 6px 6px; overflow-y: auto; }
+
+.file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.col-time, .file-time { font-size: 10px; color: #777; text-align: center; }
+.col-count, .file-count { font-size: 10px; color: #444; text-align: center; font-weight: bold; }
+.count-high { color: #ff5722 !important; font-size: 12px !important; text-decoration: underline; }
+.status-badge { font-size: 9px; padding: 2px 4px; border-radius: 4px; text-align: center; }
+.status-pending { background: #f1f3f4; color: #666; }
+.status-done { background: #e6f4ea; color: #1e8e3e; }
+.btn-single-dl, .btn-single-audio-dl { background: #3c78d8; color: white; border-radius: 3px; font-size: 9px; padding: 2px 5px; }
+
+/* 音频采集面板 */
+.audio-panel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.audio-item { display: grid !important; grid-template-columns: 1fr 100px 40px 50px !important; align-items: center; gap: 5px; padding: 8px; border-bottom: 1px solid #eee; }
+.audio-item .col-status { text-align: center; }
+
+.upload-panel { display: flex; flex-direction: column; gap: 10px; }
+.control-group { background: white; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+.log-container { flex: 1; background: #1e1e1e; color: #ccc; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 10px; overflow-y: auto; }
+.log-entry { margin-bottom: 2px; }
