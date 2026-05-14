@@ -70,6 +70,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // 快捷日志显示
+  async function showLog(message) {
+    const data = await chrome.storage.local.get(['logs']);
+    const logs = data.logs || [];
+    logs.push({ timestamp: Date.now(), message });
+    if (logs.length > 200) logs.shift();
+    await chrome.storage.local.set({ logs });
+  }
+
   // --- 5. 核心操作绑定 ---
 
   // 音频采集
