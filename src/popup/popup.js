@@ -95,14 +95,38 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnBatchAudio.onclick = async () => {
     if (confirm('是否开始批量下载音频？')) {
       const limit = parseInt(document.getElementById('audio-download-limit').value) || 5;
+      const untilName = document.getElementById('audio-download-until').value.trim();
       const data = await chrome.storage.local.get(['pendingAudio']);
-      const audioToDownload = (data.pendingAudio || [])
-        .filter(a => a.status === 'pending')
-        .sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0))
-        .slice(0, limit);
+      let audioItems = data.pendingAudio || [];
+      
+      // 排序 logic 与渲染保持一致
+      audioItems.sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0));
+
+      let audioToDownload = [];
+      const pendingItems = audioItems.filter(a => a.status === 'pending');
+
+      if (untilName) {
+        // 如果指定了截止文件名，寻找其索引
+        const untilIndex = pendingItems.findIndex(a => a.name === untilName);
+        if (untilIndex !== -1) {
+          audioToDownload = pendingItems.slice(0, untilIndex + 1);
+        } else {
+          // 模糊匹配
+          const fuzzyIndex = pendingItems.findIndex(a => a.name.includes(untilName));
+          if (fuzzyIndex !== -1) {
+            audioToDownload = pendingItems.slice(0, fuzzyIndex + 1);
+          } else {
+            alert('未找到指定的截止文件，将按默认数量下载');
+            audioToDownload = pendingItems.slice(0, limit);
+          }
+        }
+      } else {
+        audioToDownload = pendingItems.slice(0, limit);
+      }
+
       chrome.runtime.sendMessage({
         type: 'START_BATCH_AUDIO_DOWNLOAD',
-        payload: { limit, filterNames: audioToDownload.map(a => a.name) }
+        payload: { limit: audioToDownload.length, filterNames: audioToDownload.map(a => a.name) }
       });
     }
   };
@@ -343,6 +367,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 音频下载按钮绑定
       document.querySelectorAll('.btn-single-audio-dl').forEach(btn => {
         btn.onclick = (e) => chrome.runtime.sendMessage({ type: 'START_SINGLE_AUDIO_DOWNLOAD', payload: { fileName: e.target.dataset.name } });
+      });
+
+      // 点击文件名快速填入“截止到”
+      document.querySelectorAll('#audio-list .file-name').forEach(el => {
+        el.style.cursor = 'pointer';
+        el.onclick = (e) => {
+          const name = e.target.innerText;
+          document.getElementById('audio-download-until').value = name;
+          showLog(`已设置截止到: ${name.substring(0, 20)}...`);
+        };
       });
     }
   }
