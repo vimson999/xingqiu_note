@@ -69,6 +69,9 @@
 ### 难点 D：音频 tab 无法扫描
 - **对策**: 补齐 popup 发出的 `SCAN_AUDIO` 消息处理器，并修正顶部刷新按钮在音频 tab 下的消息类型。
 
+### 难点 E：下载量获取不回写或无反馈
+- **对策**: 下载量解析支持更多页面文案格式，并将 0 下载量也写回列表；回写时使用规范化标题匹配，避免截断标题导致写回失败。Popup 增加 Deep Scan 开始与完成日志。
+
 ## 4. 提交记录
 - `eb0963e` - Stabilize batch file downloads
 - `24e933e` - Restore audio scan and limit batch downloads

@@ -118,6 +118,31 @@ function overlayMatchesFile(container, fileName) {
     || tokenHits >= Math.min(3, tokens.length);
 }
 
+function parseDownloadCount(text = '') {
+  const normalized = String(text).replace(/\s+/g, ' ');
+  const patterns = [
+    /下载量\s*[:：]?\s*([0-9,，]+)/,
+    /下载次数\s*[:：]?\s*([0-9,，]+)/,
+    /([0-9,，]+)\s*次下载/,
+    /已下载\s*([0-9,，]+)\s*次/,
+    /下载\s*([0-9,，]+)\s*次/
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) return parseInt(match[1].replace(/[,，]/g, ''), 10);
+  }
+  return null;
+}
+
+function namesReferToSameItem(a = '', b = '') {
+  const left = normalizeFileName(a);
+  const right = normalizeFileName(b);
+  if (!left || !right) return false;
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  return left.substring(0, 24) === right.substring(0, 24);
+}
+
 function describeElement(element, container) {
   if (!element) return null;
   return {
@@ -128,6 +153,20 @@ function describeElement(element, container) {
     role: element.getAttribute?.('role') || '',
     containerText: (container?.innerText || '').trim().substring(0, 180)
   };
+}
+
+async function updateStoredDownloadCount(storageKey, itemName, downloadCount) {
+  const data = await chrome.storage.local.get(storageKey);
+  const items = data[storageKey] || [];
+  let updatedCount = 0;
+  const updatedItems = items.map(item => {
+    const name = item.name || '';
+    if (!namesReferToSameItem(name, itemName)) return item;
+    updatedCount++;
+    return { ...item, downloadCount };
+  });
+  await chrome.storage.local.set({ [storageKey]: updatedItems });
+  return updatedCount;
 }
 
 async function clickFileAndWaitForDownload(fileName) {
@@ -322,26 +361,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await sleep(400);
           nameEl.click();
           
-          let downloadCount = 0;
+          let downloadCount = null;
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
             const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
-            const overlay = Array.from(overlays).find(o => o.innerText.includes(fileName.substring(0, 10)));
+            const overlay = Array.from(overlays).find(o => overlayMatchesFile(o, fileName));
             if (overlay) {
               const text = overlay.innerText;
-              const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
-              if (match) { downloadCount = parseInt(match[1]); break; }
+              const parsedCount = parseDownloadCount(text);
+              if (parsedCount !== null) { downloadCount = parsedCount; break; }
             }
             await sleep(300);
           }
           
-          if (downloadCount > 0) {
-            const data = await chrome.storage.local.get('pendingFiles');
-            const files = (data.pendingFiles || []).map(f => f.name === fileName ? { ...f, downloadCount } : f);
-            await chrome.storage.local.set({ pendingFiles: files });
-            count++;
+          if (downloadCount !== null) {
+            const updatedCount = await updateStoredDownloadCount('pendingFiles', fileName, downloadCount);
+            if (updatedCount > 0) count++;
+            internalLog(`文件下载量已更新: ${fileName} => ${downloadCount}`, { updatedCount });
+          } else {
+            internalLog(`未解析到文件下载量: ${fileName}`);
           }
+          await closeOverlayAndWait();
         }
         internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
         sendResponse({ success: true, count });
@@ -372,28 +413,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           item.scrollIntoView({ behavior: 'smooth', block: 'center' });
           window.scrollBy(0, -100);
           await sleep(400);
-          item.click();
+          const clickable = item.querySelector('.name') || item;
+          clickable.click();
           
-          let downloadCount = 0;
+          let downloadCount = null;
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
             const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
-            const overlay = Array.from(overlays).find(o => o.innerText.includes(audioName.substring(0, 10)));
+            const overlay = Array.from(overlays).find(o => overlayMatchesFile(o, audioName));
             if (overlay) {
               const text = overlay.innerText;
-              const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
-              if (match) { downloadCount = parseInt(match[1]); break; }
+              const parsedCount = parseDownloadCount(text);
+              if (parsedCount !== null) { downloadCount = parsedCount; break; }
             }
             await sleep(300);
           }
           
-          if (downloadCount > 0) {
-            const data = await chrome.storage.local.get('pendingAudio');
-            const audioItems = (data.pendingAudio || []).map(a => a.name === audioName ? { ...a, downloadCount } : a);
-            await chrome.storage.local.set({ pendingAudio: audioItems });
-            count++;
+          if (downloadCount !== null) {
+            const updatedCount = await updateStoredDownloadCount('pendingAudio', audioName, downloadCount);
+            if (updatedCount > 0) count++;
+            internalLog(`音频下载量已更新: ${audioName} => ${downloadCount}`, { updatedCount });
+          } else {
+            internalLog(`未解析到音频下载量: ${audioName}`);
           }
+          await closeOverlayAndWait();
         }
         internalLog(`音频深度扫描完成，更新了 ${count} 个音频的下载量`);
         sendResponse({ success: true, count });
