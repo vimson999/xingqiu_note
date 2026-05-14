@@ -41,7 +41,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_BATCH_AUDIO_DOWNLOAD') {
     if (isBatchRunning) return;
     stopBatchRequested = false;
-    startBatchAudioDownload();
+    startBatchAudioDownload(message.payload || {});
   }
 });
 
@@ -284,12 +284,21 @@ function waitForDownloadStarted(expectedName, startedAtMs, timeoutMs) {
   });
 }
 
-async function startBatchAudioDownload() {
+async function startBatchAudioDownload({ limit = 5, filterNames = [] } = {}) {
   isBatchRunning = true;
   chrome.storage.local.set({ isDownloading: true });
   const data = await chrome.storage.local.get(['pendingAudio']);
-  const tasks = (data.pendingAudio || []).filter(a => a.status === 'pending');
-  if (tasks.length === 0) { isBatchRunning = false; return; }
+  let tasks = (data.pendingAudio || []).filter(a => a.status === 'pending');
+  if (filterNames.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
+  tasks.sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0));
+  if (limit > 0) tasks = tasks.slice(0, limit);
+  if (tasks.length === 0) {
+    addLog('WARN', '无待下载音频。');
+    isBatchRunning = false;
+    chrome.storage.local.set({ isDownloading: false });
+    return;
+  }
+  addLog('INFO', `启动音频批量任务 [共 ${tasks.length} 个音频]`);
   for (let i = 0; i < tasks.length; i++) {
     if (stopBatchRequested) break;
     await executeAudioDownloadTask(tasks[i], i + 1, tasks.length);

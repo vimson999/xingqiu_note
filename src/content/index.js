@@ -222,6 +222,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'SCAN_AUDIO') {
+    const items = document.querySelectorAll('.file-container .item');
+    const newAudio = Array.from(items).map(item => {
+      const name = item.querySelector('.name')?.innerText.trim();
+      const uploadTime = item.querySelector('.time')?.innerText.trim() || '未知';
+      return name ? { name, uploadTime, downloadCount: 0, status: 'pending' } : null;
+    }).filter(Boolean);
+
+    chrome.storage.local.get(['pendingAudio', 'downloadedHistory'], (data) => {
+      const oldAudio = data.pendingAudio || [];
+      const history = data.downloadedHistory || [];
+      const combined = [...oldAudio];
+      newAudio.forEach(na => {
+        if (history.includes(na.name)) na.status = 'done';
+        const idx = combined.findIndex(old => old.name === na.name);
+        if (idx === -1) combined.push(na);
+        else {
+          combined[idx].uploadTime = na.uploadTime;
+          if (history.includes(na.name)) combined[idx].status = 'done';
+        }
+      });
+      chrome.storage.local.set({ pendingAudio: combined }, () => sendResponse({ count: combined.length, found: newAudio.length }));
+    });
+    return true;
+  }
+
   if (message.type === 'TRIGGER_CLICK') {
     (async () => {
       try {

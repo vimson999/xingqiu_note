@@ -77,8 +77,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnScanAudio.onclick = async () => {
     btnScanAudio.innerText = '扫描中...';
-    await safeSendMessage({ type: 'SCAN_AUDIO' });
+    const response = await safeSendMessage({ type: 'SCAN_AUDIO' });
     btnScanAudio.innerText = '2. 扫描当前列表';
+    if (!response) alert('未连接到知识星球音频页面，请确认当前标签页是音频搜索页并已刷新。');
     renderFromStorage();
   };
 
@@ -91,7 +92,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnBatchAudio.onclick = async () => {
     if (confirm('是否开始批量下载音频？')) {
-      chrome.runtime.sendMessage({ type: 'START_BATCH_AUDIO_DOWNLOAD' });
+      const limit = parseInt(document.getElementById('audio-download-limit').value) || 5;
+      const data = await chrome.storage.local.get(['pendingAudio']);
+      const audioToDownload = (data.pendingAudio || [])
+        .filter(a => a.status === 'pending')
+        .sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0))
+        .slice(0, limit);
+      chrome.runtime.sendMessage({
+        type: 'START_BATCH_AUDIO_DOWNLOAD',
+        payload: { limit, filterNames: audioToDownload.map(a => a.name) }
+      });
     }
   };
 
@@ -108,7 +118,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     items.forEach(item => {
       const row = [
         `"${item.name.replace(/"/g, '""')}"`,
-        `"${item.time || ''}"`,
+        `"${item.uploadTime || ''}"`,
         `"${item.downloadCount || 0}"`,
         `"${item.status}"`
       ].join(",");
@@ -136,8 +146,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 刷新当前页
   btnScan.onclick = async () => {
     btnScan.innerText = '刷新中...';
-    await safeSendMessage({ type: 'SCAN_FILES' });
+    const activeTab = document.querySelector('.tab.active')?.dataset.tab;
+    const messageType = activeTab === 'audio' ? 'SCAN_AUDIO' : 'SCAN_FILES';
+    const response = await safeSendMessage({ type: messageType });
     btnScan.innerText = '刷新当前页';
+    if (!response) alert('未连接到知识星球页面，请确认当前标签页是 zsxq.com 并已刷新。');
     renderFromStorage();
   };
 
