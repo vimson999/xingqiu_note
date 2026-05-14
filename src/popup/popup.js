@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnScanAudio = document.getElementById('btn-scan-audio');
   const btnDeepScanAudio = document.getElementById('btn-deep-scan-audio');
   const btnBatchAudio = document.getElementById('btn-batch-audio');
+  const btnStopAudio = document.getElementById('btn-stop-audio');
   const btnExportAudio = document.getElementById('btn-export-audio');
   const btnClearAudio = document.getElementById('btn-clear-audio');
   const btnClearAudioHistory = document.getElementById('btn-clear-audio-history');
@@ -105,6 +106,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
     }
   };
+
+  btnStopAudio.onclick = () => chrome.runtime.sendMessage({ type: 'STOP_BATCH_DOWNLOAD' });
 
   btnExportAudio.onclick = async () => {
     const data = await chrome.storage.local.get(['pendingAudio']);
@@ -270,6 +273,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 更新批量按钮状态
     btnStartBatch.style.display = isDownloading ? 'none' : 'inline-block';
     btnStopBatch.style.display = isDownloading ? 'inline-block' : 'none';
+    if (btnBatchAudio && btnStopAudio) {
+      btnBatchAudio.style.display = isDownloading ? 'none' : 'inline-block';
+      btnStopAudio.style.display = isDownloading ? 'inline-block' : 'none';
+    }
 
     // 1. 筛选
     const filterVal = selectInst.value;

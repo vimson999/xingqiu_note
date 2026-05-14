@@ -213,6 +213,7 @@ async function stopFileBatch(message) {
   await chrome.alarms.clear(FILE_BATCH_ALARM);
   addLog('INFO', message);
   await resetProcessingToPending();
+  await resetAudioProcessingToPending();
   await chrome.storage.local.set({ isDownloading: false, fileBatchState: null });
 }
 
@@ -224,6 +225,16 @@ async function resetProcessingToPending() {
       : f
   ));
   await chrome.storage.local.set({ pendingFiles });
+}
+
+async function resetAudioProcessingToPending() {
+  const data = await chrome.storage.local.get(['pendingAudio']);
+  const pendingAudio = (data.pendingAudio || []).map(a => (
+    a.status === 'processing'
+      ? { ...a, status: 'pending', lastError: 'STOPPED_OR_RECOVERED' }
+      : a
+  ));
+  await chrome.storage.local.set({ pendingAudio });
 }
 
 function resetStaleProcessing(files) {
