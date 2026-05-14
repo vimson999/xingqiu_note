@@ -32,6 +32,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnBatchAudio = document.getElementById('btn-batch-audio');
   const btnExportAudio = document.getElementById('btn-export-audio');
   const btnClearAudio = document.getElementById('btn-clear-audio');
+  const btnClearAudioHistory = document.getElementById('btn-clear-audio-history');
   const audioListEl = document.getElementById('audio-list');
   
   const selectInst = document.getElementById('select-institution');
@@ -137,8 +138,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   btnClearAudio.onclick = async () => {
-    if (confirm('确定清空音频列表并重置下载历史？')) {
-      await chrome.storage.local.set({ pendingAudio: [], downloadedHistory: [] });
+    if (confirm('确定清空音频列表？下载记录将保留，用于避免重复下载。')) {
+      await chrome.storage.local.set({ pendingAudio: [] });
+      renderFromStorage();
+    }
+  };
+
+  btnClearAudioHistory.onclick = async () => {
+    if (confirm('确定清除音频下载记录？已完成的音频会重新变为可下载。')) {
+      const data = await chrome.storage.local.get(['pendingAudio']);
+      const pendingAudio = (data.pendingAudio || []).map(a => (
+        a.status === 'done' ? { ...a, status: 'pending' } : a
+      ));
+      await chrome.storage.local.set({ downloadedAudioHistory: [], pendingAudio });
       renderFromStorage();
     }
   };

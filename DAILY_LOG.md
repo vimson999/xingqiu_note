@@ -29,3 +29,51 @@
 1. **性能优化**: 减少 `MutationObserver` 的冗余触发。
 2. **容错机制**: 增加对网络超时导致的详情层打不开的自动跳过处理。
 3. **用户体验**: 增加扫描进度条。
+
+---
+
+# 研发日记 - 2026-05-14
+
+## 1. 研发概况
+今天围绕“文件列表批量下载稳定性”和“音频采集 tab 恢复与完善”进行修复。重点解决批量下载未跑满、卡在处理、重复下载同一文件，以及音频列表无法扫描的问题。
+
+## 2. 版本迭代记录
+- **批量文件下载稳定性**:
+  - 将文件批量下载从长时间 `for + sleep` 调度调整为 `chrome.storage.local` 状态 + `chrome.alarms` 唤醒，降低 Manifest V3 Service Worker 被回收导致任务卡住的风险。
+  - 批量任务启动时固定当前知识星球 tab，避免等待间隔中切换标签页导致消息发往错误页面。
+  - 对 `processing` 状态增加时间戳和过期恢复逻辑，减少历史卡死状态污染下一轮任务。
+  - 文件定位从全局 `.file-name` 改为文件列表 item 内匹配，减少相似文件名和旧弹层残留导致的重复下载。
+  - 保留原站点可用的 `.btn.download` + `btn.click()` 下载触发方式，避免破坏已有下载路径。
+  - 后台监听 `chrome.downloads.onCreated`，只有真实创建下载任务后才标记为完成。
+
+- **音频采集 tab 修复与增强**:
+  - 补齐 `SCAN_AUDIO` content 消息处理，恢复音频搜索页当前列表扫描。
+  - 顶部“刷新当前页”根据当前 tab 自动选择 `SCAN_FILES` 或 `SCAN_AUDIO`。
+  - 音频批量下载增加“下载前 N 个”设置，默认 5 个。
+  - 后台音频批量下载支持 `limit` 和筛选后的任务名单。
+  - 音频下载历史改为独立的 `downloadedAudioHistory`，避免与文件下载历史互相污染。
+  - 音频 tab 增加“清除下载记录”，支持重置已完成状态并重新下载。
+  - 修复音频 CSV 导出字段 `time` / `uploadTime` 不一致。
+
+## 3. 核心技术难点与对策
+### 难点 A：批量下载卡在处理中
+- **对策**: 不再依赖 Service Worker 持续存活等待 20 秒间隔，而是用 `chrome.alarms` 唤醒下一步任务，并把批次状态持久化到 `chrome.storage.local`。
+
+### 难点 B：重复下载同一个文件
+- **对策**: 避免全局查找 `.file-name`，改为先锁定 `.file-gallery-container` / `.file-gallery-container-box` 内的文件 item，再点击对应 item 中的文件名。
+
+### 难点 C：页面返回成功但实际没下载
+- **对策**: 后台增加真实下载创建确认，若页面返回成功但 `chrome.downloads.onCreated` 未触发，则记录 `DOWNLOAD_NOT_STARTED` 并标记失败。
+
+### 难点 D：音频 tab 无法扫描
+- **对策**: 补齐 popup 发出的 `SCAN_AUDIO` 消息处理器，并修正顶部刷新按钮在音频 tab 下的消息类型。
+
+## 4. 提交记录
+- `eb0963e` - Stabilize batch file downloads
+- `24e933e` - Restore audio scan and limit batch downloads
+
+## 5. 测试建议
+1. 每次更新后在 `chrome://extensions/` 重新加载插件，并刷新知识星球页面。
+2. 文件列表优先测试“下载前 12 个”，观察是否仍出现重复下载或卡在处理。
+3. 音频 tab 先进入音频搜索页，点击“扫描当前列表”，再测试“下载前 N 个”。
+4. 若出现失败，优先导出操作日志，重点查看 `TIMEOUT_ON_PAGE`、`DOWNLOAD_NOT_STARTED`、`NOT_FOUND_IN_FILE_LIST`。

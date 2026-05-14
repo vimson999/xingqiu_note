@@ -323,13 +323,13 @@ async function executeAudioDownloadTask(task, current, total) {
 }
 
 async function updateAudioStatus(name, status) {
-  const data = await chrome.storage.local.get(['pendingAudio', 'downloadedHistory']);
+  const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
   const updated = (data.pendingAudio || []).map(a => a.name === name ? { ...a, status } : a);
   const updates = { pendingAudio: updated };
   if (status === 'done') {
-    const history = data.downloadedHistory || [];
+    const history = data.downloadedAudioHistory || [];
     if (!history.includes(name)) history.push(name);
-    updates.downloadedHistory = history;
+    updates.downloadedAudioHistory = history;
   }
   await chrome.storage.local.set(updates);
 }

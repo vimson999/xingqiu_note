@@ -230,9 +230,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return name ? { name, uploadTime, downloadCount: 0, status: 'pending' } : null;
     }).filter(Boolean);
 
-    chrome.storage.local.get(['pendingAudio', 'downloadedHistory'], (data) => {
+    chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory'], (data) => {
       const oldAudio = data.pendingAudio || [];
-      const history = data.downloadedHistory || [];
+      const history = data.downloadedAudioHistory || [];
       const combined = [...oldAudio];
       newAudio.forEach(na => {
         if (history.includes(na.name)) na.status = 'done';
