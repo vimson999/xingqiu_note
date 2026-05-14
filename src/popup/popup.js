@@ -80,7 +80,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnScanAudio.onclick = async () => {
     btnScanAudio.innerText = '扫描中...';
     const response = await safeSendMessage({ type: 'SCAN_AUDIO' });
-    btnScanAudio.innerText = '2. 扫描当前列表';
+    btnScanAudio.innerText = '2. 扫描列表';
     if (!response) alert('未连接到知识星球音频页面，请确认当前标签页是音频搜索页并已刷新。');
     renderFromStorage();
   };
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnDeepScanAudio.onclick = async () => {
     btnDeepScanAudio.innerText = '获取中...';
     await safeSendMessage({ type: 'DEEP_SCAN_AUDIO' });
-    btnDeepScanAudio.innerText = '3. 获取下载量 (Deep Scan)';
+    btnDeepScanAudio.innerText = '3. 获取下载量';
     renderFromStorage();
   };
 

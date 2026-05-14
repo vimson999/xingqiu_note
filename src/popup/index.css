@@ -40,11 +40,19 @@ select { padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3
 .btn-single-dl, .btn-single-audio-dl { background: #3c78d8; color: white; border-radius: 3px; font-size: 9px; padding: 2px 5px; }
 
 /* 音频采集面板 */
-.audio-panel { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
+.audio-panel { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
 .audio-item { display: grid !important; grid-template-columns: 1fr 100px 40px 50px !important; align-items: center; gap: 5px; padding: 8px; border-bottom: 1px solid #eee; }
 .audio-item .col-status { text-align: center; }
 
 .upload-panel { display: flex; flex-direction: column; gap: 10px; }
 .control-group { background: white; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+.control-group.compact { padding: 6px 8px; gap: 4px; }
+.group-header { display: flex; justify-content: space-between; align-items: center; }
+.group-header label { font-weight: bold; color: #555; font-size: 11px; }
+.button-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.button-row button { padding: 4px 8px; }
+.setting-item.compact { font-size: 11px; }
+.setting-item.compact input { padding: 1px 3px; font-size: 11px; }
+
 .log-container { flex: 1; background: #1e1e1e; color: #ccc; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 10px; overflow-y: auto; }
 .log-entry { margin-bottom: 2px; }

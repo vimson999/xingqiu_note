@@ -72,27 +72,35 @@
 
   <div id="tab-audio" class="tab-content">
     <div class="audio-panel">
-      <div class="control-group">
-      <label>数据采集:</label>
-      <button id="btn-go-audio" class="primary-btn" style="background:#009688;">1. 进入音频搜索页</button>
-      <button id="btn-scan-audio" class="primary-btn">2. 扫描当前列表</button>
-      <button id="btn-deep-scan-audio" class="primary-btn" style="background:#673ab7;">3. 获取下载量 (Deep Scan)</button>
-    </div>
-    <div class="control-group">
-      <label>批量操作:</label>
-      <div class="setting-item">
-        <span>下载前 <input type="number" id="audio-download-limit" value="5" min="1"> 个</span>
+      <div class="control-group compact">
+        <div class="group-header">
+          <label>数据采集:</label>
+        </div>
+        <div class="button-row">
+          <button id="btn-go-audio" class="primary-btn" style="background:#009688;">1. 进入搜索页</button>
+          <button id="btn-scan-audio" class="primary-btn">2. 扫描列表</button>
+          <button id="btn-deep-scan-audio" class="primary-btn" style="background:#673ab7;">3. 获取下载量</button>
+        </div>
       </div>
-      <button id="btn-batch-audio" class="primary-btn" style="background:#f44336;">开始批量下载</button>
-      <button id="btn-stop-audio" class="danger-btn" style="display:none;">停止下载</button>
-      <button id="btn-export-audio" class="primary-btn" style="background:#2196F3;">导出 CSV</button>
-      <button id="btn-clear-audio" class="danger-btn">清空列表</button>
-      <button id="btn-clear-audio-history" class="danger-btn">清除下载记录</button>
+      <div class="control-group compact">
+        <div class="group-header">
+          <label>批量操作:</label>
+          <div class="setting-item compact">
+            <span>前 <input type="number" id="audio-download-limit" value="5" min="1" style="width:30px;"> 个</span>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="btn-batch-audio" class="primary-btn" style="background:#f44336;">开始下载</button>
+          <button id="btn-stop-audio" class="danger-btn" style="display:none;">停止</button>
+          <button id="btn-export-audio" class="primary-btn" style="background:#2196F3;">导出 CSV</button>
+          <button id="btn-clear-audio" class="danger-btn">清空</button>
+          <button id="btn-clear-audio-history" class="danger-btn">清除记录</button>
+        </div>
+      </div>
     </div>
-  </div>
-  <div class="stats">
-    <span>已发现音频: <b id="audio-found-count">0</b></span>
-  </div>
+    <div class="stats">
+      <span>已发现音频: <b id="audio-found-count">0</b></span>
+    </div>
   <div class="list-header audio-item">
     <span class="col-name">音频标题</span>
     <span class="col-time">上传时间</span>
