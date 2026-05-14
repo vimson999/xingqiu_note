@@ -53,6 +53,148 @@ async function ensureCleanSlate(maxWaitMs = 5000) {
   return false;
 }
 
+async function closeOverlayAndWait(maxWaitMs = 5000) {
+  triggerCloseActions();
+  return ensureCleanSlate(maxWaitMs);
+}
+
+function normalizeFileName(name = '') {
+  return name
+    .replace(/\.pdf$/i, '')
+    .replace(/\.{3}|…/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function getFileListItems() {
+  return Array.from(document.querySelectorAll('.file-gallery-container .item, .file-gallery-container-box .item'));
+}
+
+function getVisibleDownloadButton() {
+  const btns = document.querySelectorAll('.btn.download');
+  return Array.from(btns).find(btn => {
+    const s = window.getComputedStyle(btn);
+    return s.display !== 'none'
+      && s.opacity !== '0'
+      && s.visibility !== 'hidden'
+      && btn.offsetWidth > 0
+      && btn.offsetHeight > 0;
+  });
+}
+
+function findFileItemByName(fileName) {
+  const wanted = normalizeFileName(fileName);
+  const items = getFileListItems();
+  const candidates = items.map(item => {
+    const nameEl = item.querySelector('.file-name');
+    return {
+      item,
+      rawName: nameEl?.innerText.trim() || '',
+      normalizedName: normalizeFileName(nameEl?.innerText || '')
+    };
+  }).filter(c => c.normalizedName);
+
+  let match = candidates.find(c => c.normalizedName === wanted);
+  if (match) return match;
+
+  match = candidates.find(c => wanted.includes(c.normalizedName) || c.normalizedName.includes(wanted));
+  if (match) return match;
+
+  const prefix = wanted.substring(0, 24);
+  return candidates.find(c => c.normalizedName.startsWith(prefix) || prefix.startsWith(c.normalizedName.substring(0, 24)));
+}
+
+function overlayMatchesFile(container, fileName) {
+  const wanted = normalizeFileName(fileName);
+  const text = normalizeFileName(container?.innerText || '');
+  const tokens = wanted
+    .split(/[-_：:；;，,（）()\[\]\s]+/)
+    .filter(t => t.length >= 2)
+    .slice(0, 5);
+  const tokenHits = tokens.filter(t => text.includes(t)).length;
+  return text.includes(wanted)
+    || text.includes(wanted.substring(0, 24))
+    || tokenHits >= Math.min(3, tokens.length);
+}
+
+function describeElement(element, container) {
+  if (!element) return null;
+  return {
+    tag: element.tagName || '',
+    className: String(element.className || ''),
+    text: (element.innerText || element.textContent || '').trim().substring(0, 120),
+    href: element.href || element.getAttribute?.('href') || '',
+    role: element.getAttribute?.('role') || '',
+    containerText: (container?.innerText || '').trim().substring(0, 180)
+  };
+}
+
+async function clickFileAndWaitForDownload(fileName) {
+  internalLog(`[1. 预备阶段] ${fileName}`);
+  await closeOverlayAndWait();
+  await sleep(300);
+
+  const match = findFileItemByName(fileName);
+  if (!match) {
+    internalLog("错误：未在当前文件列表中找到目标", fileName);
+    return { success: false, error: 'NOT_FOUND_IN_FILE_LIST' };
+  }
+
+  const triggerClick = () => {
+    internalLog(`[2. 执行点击] ${match.rawName}`);
+    match.item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.scrollBy(0, -100);
+    setTimeout(() => {
+      const clickable = match.item.querySelector('.file-name') || match.item;
+      clickable.click();
+    }, 400);
+  };
+
+  triggerClick();
+  const startedAt = Date.now();
+  let retry = 0;
+
+  while (Date.now() - startedAt < 30000) {
+    await sleep(500);
+    const btn = getVisibleDownloadButton();
+
+    if (btn) {
+      const container = btn.closest('.cdk-overlay-pane, .dialog-container, .modal-content, .detail-layer') || btn.parentElement?.parentElement?.parentElement;
+      const matched = overlayMatchesFile(container, fileName);
+      if (matched) {
+        internalLog("[3. 结果确认] 弹层文件名匹配，点击下载", {
+          expected: fileName,
+          actualText: (container?.innerText || '').substring(0, 120)
+        });
+        btn.click();
+        await sleep(2500);
+        await closeOverlayAndWait();
+        return { success: true, clickedDownload: describeElement(btn, container) };
+      }
+
+      internalLog("[3. 结果拒绝] 弹层文件名不匹配，关闭后重试", {
+        expected: fileName,
+        actualText: (container?.innerText || '').substring(0, 120)
+      });
+      await closeOverlayAndWait();
+      triggerClick();
+      retry++;
+      continue;
+    }
+
+    if (retry === 8 || retry === 18) {
+      internalLog("详情层未弹出，执行补点...");
+      triggerClick();
+    }
+    retry++;
+  }
+
+  internalLog("严重错误：等待下载按钮最终超时", fileName);
+  await closeOverlayAndWait();
+  return { success: false, error: 'TIMEOUT_ON_PAGE' };
+}
+
 // 3. 消息监听
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SCAN_FILES') {
@@ -83,69 +225,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'TRIGGER_CLICK') {
     (async () => {
       try {
-        const { fileName } = message.payload;
-        internalLog(`[1. 预备阶段] ${fileName}`);
-        
-        // --- 核心思路应用：先判断并解决关闭问题，再执行新任务 ---
-        await ensureCleanSlate(); 
-        await sleep(300);
-
-        const cleanName = fileName.trim().replace(/\.pdf$/i, '');
-        const target = Array.from(document.querySelectorAll('.file-name'))
-          .find(el => {
-            const t = el.innerText.trim();
-            return t.includes(cleanName.substring(0, 15)) || cleanName.includes(t.replace('...', ''));
-          });
-
-        if (!target) {
-          internalLog("错误：未在列表中找到目标", fileName);
-          sendResponse({ success: false, error: 'NOT_FOUND_IN_PAGE' });
-          return;
-        }
-
-        const triggerClick = () => {
-          internalLog("[2. 执行点击] 尝试打开详情层...");
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          window.scrollBy(0, -100);
-          setTimeout(() => target.click(), 400);
-        };
-
-        triggerClick();
-
-        let retry = 0;
-        const checkInterval = setInterval(async () => {
-          try {
-            const btns = document.querySelectorAll('.btn.download');
-            const btn = Array.from(btns).find(b => {
-              const s = window.getComputedStyle(b);
-              return s.display !== 'none' && s.opacity !== '0' && b.offsetWidth > 0;
-            });
-
-            if (btn) {
-              const container = btn.closest('.cdk-overlay-pane, .dialog-container, .modal-content, .detail-layer') || btn.parentElement?.parentElement?.parentElement;
-              if ((container?.innerText || '').includes(cleanName.substring(0, 10))) {
-                internalLog("[3. 结果确认] 成功捕获匹配的下载按钮");
-                clearInterval(checkInterval);
-                btn.click();
-                await sleep(2500);
-                triggerCloseActions(); // 下载完顺手点一下关闭，为下次铺路
-                sendResponse({ success: true });
-                return;
-              }
-            }
-
-            if (retry === 8) {
-              internalLog("详情层未弹出，执行二次补点...");
-              triggerClick();
-            }
-
-            if (retry++ > 25) {
-              internalLog("严重错误：等待下载按钮最终超时");
-              clearInterval(checkInterval);
-              sendResponse({ success: false, error: 'TIMEOUT_ON_PAGE' });
-            }
-          } catch (e) { }
-        }, 500);
+        const result = await clickFileAndWaitForDownload(message.payload.fileName);
+        sendResponse(result);
       } catch (err) { sendResponse({ success: false, error: err.message }); }
     })();
     return true;

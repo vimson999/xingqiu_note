@@ -35,6 +35,8 @@ select { padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3
 .status-badge { font-size: 9px; padding: 2px 4px; border-radius: 4px; text-align: center; }
 .status-pending { background: #f1f3f4; color: #666; }
 .status-done { background: #e6f4ea; color: #1e8e3e; }
+.status-processing { background: #fff7e6; color: #b06000; }
+.status-failed { background: #fce8e6; color: #c5221f; }
 .btn-single-dl, .btn-single-audio-dl { background: #3c78d8; color: white; border-radius: 3px; font-size: 9px; padding: 2px 5px; }
 
 /* 音频采集面板 */

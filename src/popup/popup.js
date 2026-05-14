@@ -229,6 +229,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 6. 存储变化实时更新 UI
   chrome.storage.onChanged.addListener(() => renderFromStorage());
 
+  function getStatusText(status) {
+    if (status === 'done') return '完成';
+    if (status === 'failed') return '失败';
+    if (status === 'processing') return '处理';
+    return status || '待处理';
+  }
+
   async function renderFromStorage() {
     const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'logs', 'isDownloading']);
     let files = data.pendingFiles || [];
@@ -266,7 +273,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span class="file-time">${f.uploadTime || '-'}</span>
           <span class="file-count ${f.downloadCount > 30 ? 'count-high' : ''}">${f.downloadCount || 0}</span>
           <div class="col-status">
-            ${f.status === 'pending' ? `<button class="btn-single-dl" data-name="${f.name}">下载</button>` : `<span class="status-badge status-${f.status}">${f.status === 'done' ? '完成' : '处理'}</span>`}
+            ${f.status === 'pending' ? `<button class="btn-single-dl" data-name="${f.name}">下载</button>` : `<span class="status-badge status-${f.status}">${getStatusText(f.status)}</span>`}
           </div>
         </li>
       `).join('');

@@ -6,7 +6,8 @@
   "permissions": [
     "downloads",
     "activeTab",
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
     "https://*.zsxq.com/*"
