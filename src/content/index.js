@@ -293,4 +293,105 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+
+  // 深度扫描获取下载量 (文件)
+  if (message.type === 'DEEP_SCAN') {
+    (async () => {
+      internalLog("开始深度扫描文件下载量...");
+      const items = getFileListItems();
+      let count = 0;
+      for (const item of items) {
+        const nameEl = item.querySelector('.file-name');
+        if (!nameEl) continue;
+        const fileName = nameEl.innerText.trim();
+        
+        await closeOverlayAndWait();
+        item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.scrollBy(0, -100);
+        await sleep(400);
+        nameEl.click();
+        
+        // 等待详情层并提取下载量
+        let downloadCount = 0;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 5000) {
+          const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
+          const overlay = Array.from(overlays).find(o => o.innerText.includes(fileName.substring(0, 10)));
+          if (overlay) {
+            const text = overlay.innerText;
+            const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
+            if (match) {
+              downloadCount = parseInt(match[1]);
+              break;
+            }
+          }
+          await sleep(300);
+        }
+        
+        if (downloadCount > 0) {
+          const data = await chrome.storage.local.get('pendingFiles');
+          const files = data.pendingFiles || [];
+          const idx = files.findIndex(f => f.name === fileName);
+          if (idx !== -1) {
+            files[idx].downloadCount = downloadCount;
+            await chrome.storage.local.set({ pendingFiles: files });
+          }
+          count++;
+        }
+      }
+      internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
+      sendResponse({ success: true, count });
+    })();
+    return true;
+  }
+
+  // 深度扫描获取下载量 (音频)
+  if (message.type === 'DEEP_SCAN_AUDIO') {
+    (async () => {
+      internalLog("开始深度扫描音频下载量...");
+      const items = document.querySelectorAll('.file-container .item');
+      let count = 0;
+      for (const item of items) {
+        const nameEl = item.querySelector('.name');
+        if (!nameEl) continue;
+        const audioName = nameEl.innerText.trim();
+        
+        await closeOverlayAndWait();
+        item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        window.scrollBy(0, -100);
+        await sleep(400);
+        item.click();
+        
+        let downloadCount = 0;
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 5000) {
+          const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
+          const overlay = Array.from(overlays).find(o => o.innerText.includes(audioName.substring(0, 10)));
+          if (overlay) {
+            const text = overlay.innerText;
+            const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
+            if (match) {
+              downloadCount = parseInt(match[1]);
+              break;
+            }
+          }
+          await sleep(300);
+        }
+        
+        if (downloadCount > 0) {
+          const data = await chrome.storage.local.get('pendingAudio');
+          const audioItems = data.pendingAudio || [];
+          const idx = audioItems.findIndex(a => a.name === audioName);
+          if (idx !== -1) {
+            audioItems[idx].downloadCount = downloadCount;
+            await chrome.storage.local.set({ pendingAudio: audioItems });
+          }
+          count++;
+        }
+      }
+      internalLog(`深度扫描完成，更新了 ${count} 个音频的下载量`);
+      sendResponse({ success: true, count });
+    })();
+    return true;
+  }
 });
