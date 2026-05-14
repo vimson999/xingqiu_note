@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnGoAudio = document.getElementById('btn-go-audio');
   const btnScanAudio = document.getElementById('btn-scan-audio');
   const btnDeepScanAudio = document.getElementById('btn-deep-scan-audio');
+  const btnStopDeepAudio = document.getElementById('btn-stop-deep-audio');
   const btnBatchAudio = document.getElementById('btn-batch-audio');
   const btnStopAudio = document.getElementById('btn-stop-audio');
   const btnExportAudio = document.getElementById('btn-export-audio');
@@ -95,10 +96,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   btnDeepScanAudio.onclick = async () => {
-    btnDeepScanAudio.innerText = '获取中...';
-    await safeSendMessage({ type: 'DEEP_SCAN_AUDIO' });
-    btnDeepScanAudio.innerText = '3. 获取下载量';
+    btnDeepScanAudio.style.display = 'none';
+    btnStopDeepAudio.style.display = 'inline-block';
+    const res = await safeSendMessage({ type: 'DEEP_SCAN_AUDIO' });
+    if (!res) alert('音频深度扫描启动失败，请确认当前在音频搜索页并已刷新。');
+    btnDeepScanAudio.style.display = 'inline-block';
+    btnStopDeepAudio.style.display = 'none';
     renderFromStorage();
+  };
+
+  btnStopDeepAudio.onclick = async () => {
+    await safeSendMessage({ type: 'STOP_DEEP_SCAN' });
+    btnStopDeepAudio.innerText = '停止中...';
+    setTimeout(() => { btnStopDeepAudio.innerText = '停止获取'; }, 2000);
   };
 
   btnBatchAudio.onclick = async () => {
@@ -206,7 +216,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnDeepScan.onclick = async () => {
     btnDeepScan.style.display = 'none';
     btnStopDeep.style.display = 'inline-block';
-    await safeSendMessage({ type: 'DEEP_SCAN' });
+    const res = await safeSendMessage({ type: 'DEEP_SCAN' });
+    if (!res) alert('深度扫描启动失败，请确认当前在文件列表页并已刷新。');
     btnDeepScan.style.display = 'inline-block';
     btnStopDeep.style.display = 'none';
     renderFromStorage();
