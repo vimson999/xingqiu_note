@@ -9,6 +9,22 @@ const internalLog = (msg, data = '') => {
   console.log(`%c[ZsxqContent] ${msg}`, 'color: #8e44ad; font-weight: bold;', data);
 };
 
+async function appendContentLog(message, data = null) {
+  try {
+    const { logs = [] } = await chrome.storage.local.get('logs');
+    const detail = data ? ` | ${JSON.stringify(data).slice(0, 500)}` : '';
+    logs.push({
+      timestamp: Date.now(),
+      level: 'DEBUG',
+      message: `[Content] ${message}${detail}`
+    });
+    if (logs.length > 200) logs.shift();
+    await chrome.storage.local.set({ logs });
+  } catch (err) {
+    internalLog('写入诊断日志失败', err);
+  }
+}
+
 // 1. 强力清理函数 (原子动作)
 function triggerCloseActions() {
   const simulateNativeClick = (element) => {
@@ -123,14 +139,24 @@ function parseDownloadCount(text = '') {
   const patterns = [
     /下载量\s*[:：]?\s*([0-9,，]+)/,
     /下载次数\s*[:：]?\s*([0-9,，]+)/,
+    /下载数\s*[:：]?\s*([0-9,，]+)/,
+    /下载\s*[:：]?\s*([0-9,，]+)/,
     /([0-9,，]+)\s*次下载/,
     /已下载\s*([0-9,，]+)\s*次/,
-    /下载\s*([0-9,，]+)\s*次/
+    /下载\s*([0-9,，]+)\s*次/,
+    /([0-9,，]+)\s*人?下载/
   ];
 
   for (const pattern of patterns) {
     const match = normalized.match(pattern);
     if (match) return parseInt(match[1].replace(/[,，]/g, ''), 10);
+  }
+  const downloadLine = normalized
+    .split(/[\n\r。；;]/)
+    .find(line => /下载/.test(line) && /[0-9]/.test(line));
+  if (downloadLine) {
+    const number = downloadLine.match(/([0-9][0-9,，]*)/);
+    if (number) return parseInt(number[1].replace(/[,，]/g, ''), 10);
   }
   return null;
 }
@@ -347,7 +373,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isDeepScanStopped = false;
         internalLog("开始深度扫描文件下载量...");
         const items = getFileListItems();
+        await appendContentLog(`文件 Deep Scan 启动，当前页面发现 ${items.length} 个文件条目`);
         let count = 0;
+        let failed = 0;
         for (const item of items) {
           if (isDeepScanStopped) { internalLog("深度扫描已手动停止"); break; }
           
@@ -362,13 +390,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           nameEl.click();
           
           let downloadCount = null;
+          let lastOverlayText = '';
+          let overlayFound = false;
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
             const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
             const overlay = Array.from(overlays).find(o => overlayMatchesFile(o, fileName));
             if (overlay) {
+              overlayFound = true;
               const text = overlay.innerText;
+              lastOverlayText = text.replace(/\s+/g, ' ').trim().slice(0, 220);
               const parsedCount = parseDownloadCount(text);
               if (parsedCount !== null) { downloadCount = parsedCount; break; }
             }
@@ -379,13 +411,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const updatedCount = await updateStoredDownloadCount('pendingFiles', fileName, downloadCount);
             if (updatedCount > 0) count++;
             internalLog(`文件下载量已更新: ${fileName} => ${downloadCount}`, { updatedCount });
+            if (updatedCount === 0) {
+              failed++;
+              await appendContentLog(`文件下载量解析成功但写回失败: ${fileName}`, { downloadCount, overlayFound, lastOverlayText });
+            } else {
+              await appendContentLog(`文件下载量写回成功: ${fileName}`, { downloadCount });
+            }
           } else {
+            failed++;
             internalLog(`未解析到文件下载量: ${fileName}`);
+            await appendContentLog(`文件下载量未解析: ${fileName}`, { overlayFound, lastOverlayText });
           }
           await closeOverlayAndWait();
         }
         internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
-        sendResponse({ success: true, count });
+        await appendContentLog(`文件 Deep Scan 完成，更新 ${count} 条，失败 ${failed} 条`);
+        sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("深度扫描发生异常:", err);
         sendResponse({ success: false, error: err.message });
@@ -401,7 +442,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isDeepScanStopped = false;
         internalLog("开始深度扫描音频下载量...");
         const items = document.querySelectorAll('.file-container .item');
+        await appendContentLog(`音频 Deep Scan 启动，当前页面发现 ${items.length} 个音频条目`);
         let count = 0;
+        let failed = 0;
         for (const item of items) {
           if (isDeepScanStopped) { internalLog("音频深度扫描已停止"); break; }
           
@@ -415,15 +458,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await sleep(400);
           const clickable = item.querySelector('.name') || item;
           clickable.click();
+          await sleep(250);
+          item.click();
           
           let downloadCount = null;
+          let lastOverlayText = '';
+          let overlayFound = false;
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
             const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
             const overlay = Array.from(overlays).find(o => overlayMatchesFile(o, audioName));
             if (overlay) {
+              overlayFound = true;
               const text = overlay.innerText;
+              lastOverlayText = text.replace(/\s+/g, ' ').trim().slice(0, 220);
               const parsedCount = parseDownloadCount(text);
               if (parsedCount !== null) { downloadCount = parsedCount; break; }
             }
@@ -434,13 +483,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             const updatedCount = await updateStoredDownloadCount('pendingAudio', audioName, downloadCount);
             if (updatedCount > 0) count++;
             internalLog(`音频下载量已更新: ${audioName} => ${downloadCount}`, { updatedCount });
+            if (updatedCount === 0) {
+              failed++;
+              await appendContentLog(`音频下载量解析成功但写回失败: ${audioName}`, { downloadCount, overlayFound, lastOverlayText });
+            } else {
+              await appendContentLog(`音频下载量写回成功: ${audioName}`, { downloadCount });
+            }
           } else {
+            failed++;
             internalLog(`未解析到音频下载量: ${audioName}`);
+            await appendContentLog(`音频下载量未解析: ${audioName}`, { overlayFound, lastOverlayText });
           }
           await closeOverlayAndWait();
         }
         internalLog(`音频深度扫描完成，更新了 ${count} 个音频的下载量`);
-        sendResponse({ success: true, count });
+        await appendContentLog(`音频 Deep Scan 完成，更新 ${count} 条，失败 ${failed} 条`);
+        sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("音频深度扫描异常:", err);
         sendResponse({ success: false, error: err.message });
