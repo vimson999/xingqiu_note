@@ -134,14 +134,19 @@ function namesMatch(a = '', b = '') {
 async function writeDownloadCount(storageKey, itemName, downloadCount) {
   const data = await chrome.storage.local.get(storageKey);
   const items = data[storageKey] || [];
-  let matched = 0;
+  const writeResults = [];
   const updatedItems = items.map(item => {
     if (!namesMatch(item.name, itemName)) return item;
-    matched++;
+    writeResults.push({
+      name: item.name,
+      before: item.downloadCount || 0,
+      captured: downloadCount,
+      after: downloadCount
+    });
     return { ...item, downloadCount };
   });
   await chrome.storage.local.set({ [storageKey]: updatedItems });
-  return matched;
+  return writeResults;
 }
 
 function overlayMatchesFile(container, fileName) {
@@ -378,13 +383,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           
           if (downloadCount > 0) {
-            const matched = await writeDownloadCount('pendingFiles', fileName, downloadCount);
-            if (matched > 0) {
+            const writeResults = await writeDownloadCount('pendingFiles', fileName, downloadCount);
+            if (writeResults.length > 0) {
               count++;
-              await appendOperationLog(`文件下载量写回成功: ${fileName}`, { downloadCount, matched });
+              await appendOperationLog(`文件下载量写回成功: ${fileName}`, {
+                captured: downloadCount,
+                writes: writeResults
+              });
             } else {
               failed++;
-              await appendOperationLog(`文件下载量解析成功但未匹配到列表项: ${fileName}`, { downloadCount });
+              await appendOperationLog(`文件下载量解析成功但未匹配到列表项: ${fileName}`, {
+                captured: downloadCount
+              });
             }
           } else {
             failed++;
@@ -440,13 +450,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           
           if (downloadCount > 0) {
-            const matched = await writeDownloadCount('pendingAudio', audioName, downloadCount);
-            if (matched > 0) {
+            const writeResults = await writeDownloadCount('pendingAudio', audioName, downloadCount);
+            if (writeResults.length > 0) {
               count++;
-              await appendOperationLog(`音频下载量写回成功: ${audioName}`, { downloadCount, matched });
+              await appendOperationLog(`音频下载量写回成功: ${audioName}`, {
+                captured: downloadCount,
+                writes: writeResults
+              });
             } else {
               failed++;
-              await appendOperationLog(`音频下载量解析成功但未匹配到列表项: ${audioName}`, { downloadCount });
+              await appendOperationLog(`音频下载量解析成功但未匹配到列表项: ${audioName}`, {
+                captured: downloadCount
+              });
             }
           } else {
             failed++;
