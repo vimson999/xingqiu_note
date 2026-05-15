@@ -37,19 +37,11 @@
       </div>
     </div>
 
-    <div class="settings-bar">
-      <div class="setting-item">
-        <span>下载前 <input type="number" id="download-limit" value="5" min="1"> 个</span>
-      </div>
-      <div class="setting-item">
-        <span>下载量 > <input type="number" id="min-count" value="0" min="0"> 时下载</span>
-      </div>
-      <div class="setting-item time-range">
-        <label>上传时间</label>
-        <input type="datetime-local" id="upload-start-time" title="只下载此时间之后上传的文件">
-        <span>至</span>
-        <input type="datetime-local" id="upload-end-time" title="只下载此时间之前上传的文件">
-      </div>
+    <div class="settings-bar file-download-rules">
+      <label class="setting-item">下载前 <input type="number" id="download-limit" value="5" min="1"> 个</label>
+      <label class="setting-item">下载量 &gt; <input type="number" id="min-count" value="0" min="0"></label>
+      <label class="setting-item time-bound">上传从 <input type="datetime-local" id="upload-start-time" title="只下载此时间之后上传的文件"></label>
+      <label class="setting-item time-bound">到 <input type="datetime-local" id="upload-end-time" title="只下载此时间之前上传的文件"></label>
     </div>
     
     <div class="control-bar">
