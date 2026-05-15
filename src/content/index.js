@@ -162,6 +162,38 @@ function overlayMatchesFile(container, fileName) {
     || tokenHits >= Math.min(3, tokens.length);
 }
 
+function parseDownloadCount(text = '') {
+  const normalized = String(text).replace(/\s+/g, ' ');
+  const patterns = [
+    /下载量\s*[:：]?\s*([0-9,，]+)/,
+    /下载次数\s*[:：]?\s*([0-9,，]+)/,
+    /下载数\s*[:：]?\s*([0-9,，]+)/,
+    /([0-9,，]+)\s*次下载/,
+    /已下载\s*([0-9,，]+)\s*次/,
+    /下载\s*([0-9,，]+)\s*次/,
+    /([0-9,，]+)\s*人?下载/
+  ];
+  for (const pattern of patterns) {
+    const match = normalized.match(pattern);
+    if (match) return parseInt(match[1].replace(/[,，]/g, ''), 10);
+  }
+  return null;
+}
+
+function getOverlayTextSample(overlay) {
+  return (overlay?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 260);
+}
+
+function findDetailOverlay(itemName) {
+  const overlays = Array.from(document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer'));
+  return overlays.find(o => o.innerText.includes(itemName.substring(0, 10)))
+    || overlays.find(o => overlayMatchesFile(o, itemName))
+    || overlays.find(o => {
+      const s = window.getComputedStyle(o);
+      return s.display !== 'none' && s.opacity !== '0' && s.visibility !== 'hidden' && o.offsetHeight > 0;
+    });
+}
+
 function describeElement(element, container) {
   if (!element) return null;
   return {
@@ -368,21 +400,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await sleep(400);
           nameEl.click();
           
-          let downloadCount = 0;
+          let downloadCount = null;
+          let overlaySample = '';
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
-            const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
-            const overlay = Array.from(overlays).find(o => o.innerText.includes(fileName.substring(0, 10)));
+            const overlay = findDetailOverlay(fileName);
             if (overlay) {
               const text = overlay.innerText;
-              const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
-              if (match) { downloadCount = parseInt(match[1]); break; }
+              overlaySample = getOverlayTextSample(overlay);
+              const parsed = parseDownloadCount(text);
+              if (parsed !== null) { downloadCount = parsed; break; }
             }
             await sleep(300);
           }
           
-          if (downloadCount > 0) {
+          if (downloadCount !== null) {
             const writeResults = await writeDownloadCount('pendingFiles', fileName, downloadCount);
             if (writeResults.length > 0) {
               count++;
@@ -398,7 +431,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           } else {
             failed++;
-            await appendOperationLog(`文件下载量未解析: ${fileName}`);
+            await appendOperationLog(`文件下载量未解析: ${fileName}`, { overlaySample });
           }
         }
         internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
@@ -435,21 +468,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await sleep(400);
           item.click();
           
-          let downloadCount = 0;
+          let downloadCount = null;
+          let overlaySample = '';
           const startedAt = Date.now();
           while (Date.now() - startedAt < 5000) {
             if (isDeepScanStopped) break;
-            const overlays = document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer');
-            const overlay = Array.from(overlays).find(o => o.innerText.includes(audioName.substring(0, 10)));
+            const overlay = findDetailOverlay(audioName);
             if (overlay) {
               const text = overlay.innerText;
-              const match = text.match(/下载量\s*(\d+)/) || text.match(/(\d+)\s*次下载/);
-              if (match) { downloadCount = parseInt(match[1]); break; }
+              overlaySample = getOverlayTextSample(overlay);
+              const parsed = parseDownloadCount(text);
+              if (parsed !== null) { downloadCount = parsed; break; }
             }
             await sleep(300);
           }
           
-          if (downloadCount > 0) {
+          if (downloadCount !== null) {
             const writeResults = await writeDownloadCount('pendingAudio', audioName, downloadCount);
             if (writeResults.length > 0) {
               count++;
@@ -465,7 +499,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           } else {
             failed++;
-            await appendOperationLog(`音频下载量未解析: ${audioName}`);
+            await appendOperationLog(`音频下载量未解析: ${audioName}`, { overlaySample });
           }
         }
         internalLog(`音频深度扫描完成，更新了 ${count} 个音频的下载量`);
