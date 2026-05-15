@@ -100,6 +100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnStopDeepAudio.style.display = 'inline-block';
     const res = await safeSendMessage({ type: 'DEEP_SCAN_AUDIO' });
     if (!res) alert('音频深度扫描启动失败，请确认当前在音频搜索页并已刷新。');
+    else await showLog(`音频下载量获取完成：更新 ${res.count || 0} 条，失败 ${res.failed || 0} 条。`);
     btnDeepScanAudio.style.display = 'inline-block';
     btnStopDeepAudio.style.display = 'none';
     renderFromStorage();
@@ -218,6 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnStopDeep.style.display = 'inline-block';
     const res = await safeSendMessage({ type: 'DEEP_SCAN' });
     if (!res) alert('深度扫描启动失败，请确认当前在文件列表页并已刷新。');
+    else await showLog(`文件下载量获取完成：更新 ${res.count || 0} 条，失败 ${res.failed || 0} 条。`);
     btnDeepScan.style.display = 'inline-block';
     btnStopDeep.style.display = 'none';
     renderFromStorage();

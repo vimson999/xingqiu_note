@@ -9,6 +9,22 @@ const internalLog = (msg, data = '') => {
   console.log(`%c[ZsxqContent] ${msg}`, 'color: #8e44ad; font-weight: bold;', data);
 };
 
+async function appendOperationLog(message, data = null) {
+  try {
+    const { logs = [] } = await chrome.storage.local.get('logs');
+    const detail = data ? ` | ${JSON.stringify(data).slice(0, 400)}` : '';
+    logs.push({
+      timestamp: Date.now(),
+      level: 'DEBUG',
+      message: `[Content] ${message}${detail}`
+    });
+    if (logs.length > 200) logs.shift();
+    await chrome.storage.local.set({ logs });
+  } catch (err) {
+    internalLog('Failed to append operation log', err);
+  }
+}
+
 // 1. 强力清理函数 (原子动作)
 function triggerCloseActions() {
   const simulateNativeClick = (element) => {
@@ -103,6 +119,29 @@ function findFileItemByName(fileName) {
 
   const prefix = wanted.substring(0, 24);
   return candidates.find(c => c.normalizedName.startsWith(prefix) || prefix.startsWith(c.normalizedName.substring(0, 24)));
+}
+
+function namesMatch(a = '', b = '') {
+  const left = normalizeFileName(a);
+  const right = normalizeFileName(b);
+  if (!left || !right) return false;
+  return left === right
+    || left.includes(right)
+    || right.includes(left)
+    || left.substring(0, 24) === right.substring(0, 24);
+}
+
+async function writeDownloadCount(storageKey, itemName, downloadCount) {
+  const data = await chrome.storage.local.get(storageKey);
+  const items = data[storageKey] || [];
+  let matched = 0;
+  const updatedItems = items.map(item => {
+    if (!namesMatch(item.name, itemName)) return item;
+    matched++;
+    return { ...item, downloadCount };
+  });
+  await chrome.storage.local.set({ [storageKey]: updatedItems });
+  return matched;
 }
 
 function overlayMatchesFile(container, fileName) {
@@ -308,7 +347,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isDeepScanStopped = false;
         internalLog("开始深度扫描文件下载量...");
         const items = getFileListItems();
+        await appendOperationLog(`文件下载量获取开始，发现 ${items.length} 个页面条目`);
         let count = 0;
+        let failed = 0;
         for (const item of items) {
           if (isDeepScanStopped) { internalLog("深度扫描已手动停止"); break; }
           
@@ -337,14 +378,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           
           if (downloadCount > 0) {
-            const data = await chrome.storage.local.get('pendingFiles');
-            const files = (data.pendingFiles || []).map(f => f.name === fileName ? { ...f, downloadCount } : f);
-            await chrome.storage.local.set({ pendingFiles: files });
-            count++;
+            const matched = await writeDownloadCount('pendingFiles', fileName, downloadCount);
+            if (matched > 0) {
+              count++;
+              await appendOperationLog(`文件下载量写回成功: ${fileName}`, { downloadCount, matched });
+            } else {
+              failed++;
+              await appendOperationLog(`文件下载量解析成功但未匹配到列表项: ${fileName}`, { downloadCount });
+            }
+          } else {
+            failed++;
+            await appendOperationLog(`文件下载量未解析: ${fileName}`);
           }
         }
         internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
-        sendResponse({ success: true, count });
+        await appendOperationLog(`文件下载量获取完成，更新 ${count} 条，失败 ${failed} 条`);
+        sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("深度扫描发生异常:", err);
         sendResponse({ success: false, error: err.message });
@@ -360,7 +409,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         isDeepScanStopped = false;
         internalLog("开始深度扫描音频下载量...");
         const items = document.querySelectorAll('.file-container .item');
+        await appendOperationLog(`音频下载量获取开始，发现 ${items.length} 个页面条目`);
         let count = 0;
+        let failed = 0;
         for (const item of items) {
           if (isDeepScanStopped) { internalLog("音频深度扫描已停止"); break; }
           
@@ -389,14 +440,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
           
           if (downloadCount > 0) {
-            const data = await chrome.storage.local.get('pendingAudio');
-            const audioItems = (data.pendingAudio || []).map(a => a.name === audioName ? { ...a, downloadCount } : a);
-            await chrome.storage.local.set({ pendingAudio: audioItems });
-            count++;
+            const matched = await writeDownloadCount('pendingAudio', audioName, downloadCount);
+            if (matched > 0) {
+              count++;
+              await appendOperationLog(`音频下载量写回成功: ${audioName}`, { downloadCount, matched });
+            } else {
+              failed++;
+              await appendOperationLog(`音频下载量解析成功但未匹配到列表项: ${audioName}`, { downloadCount });
+            }
+          } else {
+            failed++;
+            await appendOperationLog(`音频下载量未解析: ${audioName}`);
           }
         }
         internalLog(`音频深度扫描完成，更新了 ${count} 个音频的下载量`);
-        sendResponse({ success: true, count });
+        await appendOperationLog(`音频下载量获取完成，更新 ${count} 条，失败 ${failed} 条`);
+        sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("音频深度扫描异常:", err);
         sendResponse({ success: false, error: err.message });
