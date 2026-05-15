@@ -180,6 +180,24 @@ function parseDownloadCount(text = '') {
   return null;
 }
 
+function parseDownloadCountFromOverlay(overlay) {
+  if (!overlay) return null;
+
+  const recordEl = overlay.querySelector('.download-record');
+  if (recordEl) {
+    const parsed = parseDownloadCount(recordEl.innerText || recordEl.textContent || '');
+    if (parsed !== null) return parsed;
+  }
+
+  const downloadInfoEl = overlay.querySelector('.download-info');
+  if (downloadInfoEl) {
+    const parsed = parseDownloadCount(downloadInfoEl.innerText || downloadInfoEl.textContent || '');
+    if (parsed !== null) return parsed;
+  }
+
+  return parseDownloadCount(overlay.innerText || overlay.textContent || '');
+}
+
 function getOverlayTextSample(overlay) {
   return (overlay?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 260);
 }
@@ -407,9 +425,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (isDeepScanStopped) break;
             const overlay = findDetailOverlay(fileName);
             if (overlay) {
-              const text = overlay.innerText;
               overlaySample = getOverlayTextSample(overlay);
-              const parsed = parseDownloadCount(text);
+              const parsed = parseDownloadCountFromOverlay(overlay);
               if (parsed !== null) { downloadCount = parsed; break; }
             }
             await sleep(300);
@@ -475,9 +492,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (isDeepScanStopped) break;
             const overlay = findDetailOverlay(audioName);
             if (overlay) {
-              const text = overlay.innerText;
               overlaySample = getOverlayTextSample(overlay);
-              const parsed = parseDownloadCount(text);
+              const parsed = parseDownloadCountFromOverlay(overlay);
               if (parsed !== null) { downloadCount = parsed; break; }
             }
             await sleep(300);
