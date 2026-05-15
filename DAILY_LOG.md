@@ -74,6 +74,9 @@
 - **补充**: 根据文件详情 DOM，下载次数优先从 `.download-record` / `.download-info` 读取，再回退到整段弹层文本解析。
 - **补充**: Deep Scan 打开详情时同时点击标题和整条 item，并将详情弹层识别范围扩展到 `.content`，覆盖新版 Angular 文件详情结构。
 
+### 难点 F：批量下载按上传日期筛选
+- **对策**: 文件列表批量下载条件增加上传时间区间，支持按“从某时间到某时间”过滤上传内容；Popup 和 Background 均执行区间校验，避免任务队列与 UI 筛选不一致。
+
 ## 4. 提交记录
 - `eb0963e` - Stabilize batch file downloads
 - `24e933e` - Restore audio scan and limit batch downloads

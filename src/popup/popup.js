@@ -80,6 +80,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({ logs });
   }
 
+  function parseUploadTimeValue(value) {
+    if (!value || value === '未知' || value === '-') return null;
+    const normalized = value.trim().replace(/\//g, '-');
+    const withYear = /^\d{2}-\d{2}/.test(normalized)
+      ? `${new Date().getFullYear()}-${normalized}`
+      : normalized;
+    const date = new Date(withYear.replace(' ', 'T'));
+    const time = date.getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  function getDateTimeInputMs(id) {
+    const value = document.getElementById(id)?.value;
+    if (!value) return null;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? null : time;
+  }
+
+  function isWithinUploadRange(file, startMs, endMs) {
+    const uploadMs = parseUploadTimeValue(file.uploadTime);
+    if (!uploadMs) return false;
+    if (startMs && uploadMs < startMs) return false;
+    if (endMs && uploadMs > endMs) return false;
+    return true;
+  }
+
   // --- 5. 核心操作绑定 ---
 
   // 音频采集
@@ -234,6 +260,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnStartBatch.onclick = async () => {
     const limit = parseInt(document.getElementById('download-limit').value) || 5;
     const minCount = parseInt(document.getElementById('min-count').value) || 0;
+    const uploadStartMs = getDateTimeInputMs('upload-start-time');
+    const uploadEndMs = getDateTimeInputMs('upload-end-time');
     const data = await chrome.storage.local.get(['pendingFiles']);
     const currentFilter = selectInst.value;
     
@@ -243,10 +271,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       const keywords = currentFilter.split('|');
       filesToDownload = filesToDownload.filter(f => keywords.some(k => f.name.toLowerCase().includes(k.toLowerCase())));
     }
+    if (uploadStartMs || uploadEndMs) {
+      filesToDownload = filesToDownload.filter(f => isWithinUploadRange(f, uploadStartMs, uploadEndMs));
+    }
+
+    if (filesToDownload.length === 0) {
+      alert('当前筛选条件下没有可下载文件。');
+      return;
+    }
 
     chrome.runtime.sendMessage({ 
       type: 'START_BATCH_DOWNLOAD', 
-      payload: { limit, minCount, filterNames: filesToDownload.map(f => f.name) } 
+      payload: {
+        limit,
+        minCount,
+        filterNames: filesToDownload.map(f => f.name),
+        uploadStartMs,
+        uploadEndMs
+      } 
     });
   };
 

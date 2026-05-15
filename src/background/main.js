@@ -19,9 +19,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse?.({ success: false, error: 'BATCH_RUNNING' });
       return true;
     }
-    const { limit, minCount, filterNames } = message.payload || {};
+    const { limit, minCount, filterNames, uploadStartMs, uploadEndMs } = message.payload || {};
     stopBatchRequested = false;
-    startBatchDownload(limit, minCount, filterNames)
+    startBatchDownload(limit, minCount, filterNames, uploadStartMs, uploadEndMs)
       .then(() => sendResponse?.({ success: true }))
       .catch(err => {
         addLog('ERROR', `启动批量任务失败: ${err.message}`);
@@ -49,7 +49,26 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FILE_BATCH_ALARM) runNextBatchDownload();
 });
 
-async function startBatchDownload(limit, minCount, filterNames) {
+function parseUploadTimeValue(value) {
+  if (!value || value === '未知' || value === '-') return null;
+  const normalized = value.trim().replace(/\//g, '-');
+  const withYear = /^\d{2}-\d{2}/.test(normalized)
+    ? `${new Date().getFullYear()}-${normalized}`
+    : normalized;
+  const date = new Date(withYear.replace(' ', 'T'));
+  const time = date.getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+function isWithinUploadRange(file, startMs, endMs) {
+  const uploadMs = parseUploadTimeValue(file.uploadTime);
+  if (!uploadMs) return false;
+  if (startMs && uploadMs < startMs) return false;
+  if (endMs && uploadMs > endMs) return false;
+  return true;
+}
+
+async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = null, uploadEndMs = null) {
   isBatchRunning = true;
   await chrome.alarms.clear(FILE_BATCH_ALARM);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -64,6 +83,7 @@ async function startBatchDownload(limit, minCount, filterNames) {
   const pendingFiles = resetStaleProcessing(data.pendingFiles || []);
   let tasks = pendingFiles.filter(f => f.status === 'pending');
   if (filterNames?.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
+  if (uploadStartMs || uploadEndMs) tasks = tasks.filter(t => isWithinUploadRange(t, uploadStartMs, uploadEndMs));
   if (minCount > 0) tasks = tasks.filter(t => (t.downloadCount || 0) >= minCount);
   if (limit > 0) tasks = tasks.slice(0, limit);
 
