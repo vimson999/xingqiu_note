@@ -203,13 +203,50 @@ function getOverlayTextSample(overlay) {
 }
 
 function findDetailOverlay(itemName) {
-  const overlays = Array.from(document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer'));
-  return overlays.find(o => o.innerText.includes(itemName.substring(0, 10)))
-    || overlays.find(o => overlayMatchesFile(o, itemName))
-    || overlays.find(o => {
-      const s = window.getComputedStyle(o);
-      return s.display !== 'none' && s.opacity !== '0' && s.visibility !== 'hidden' && o.offsetHeight > 0;
-    });
+  const overlays = Array.from(document.querySelectorAll('.cdk-overlay-pane, .dialog-container, .detail-layer, .content'));
+  const visibleOverlays = overlays.filter(o => {
+    const s = window.getComputedStyle(o);
+    return s.display !== 'none' && s.opacity !== '0' && s.visibility !== 'hidden' && o.offsetHeight > 0;
+  });
+
+  const detailOverlays = visibleOverlays.filter(o => {
+    const text = o.innerText || '';
+    return text.includes('文件详情')
+      || text.includes('音频详情')
+      || text.includes('下载次数')
+      || text.includes('下载记录')
+      || o.querySelector?.('.download-record, .download-info');
+  });
+
+  const candidates = detailOverlays.length > 0 ? detailOverlays : visibleOverlays;
+  return candidates.find(o => (o.innerText || '').includes(itemName.substring(0, 10)))
+    || candidates.find(o => overlayMatchesFile(o, itemName))
+    || candidates[0];
+}
+
+function clickLikeUser(element) {
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const clientX = rect.left + Math.min(rect.width / 2, 40);
+  const clientY = rect.top + Math.min(rect.height / 2, 20);
+  ['mousedown', 'mouseup', 'click'].forEach(type => {
+    element.dispatchEvent(new MouseEvent(type, {
+      view: window,
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY
+    }));
+  });
+}
+
+async function openDetailFromItem(item, labelEl) {
+  item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  window.scrollBy(0, -100);
+  await sleep(400);
+  clickLikeUser(labelEl || item);
+  await sleep(250);
+  clickLikeUser(item);
 }
 
 function describeElement(element, container) {
@@ -413,10 +450,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const fileName = nameEl.innerText.trim();
           
           await closeOverlayAndWait();
-          item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          window.scrollBy(0, -100);
-          await sleep(400);
-          nameEl.click();
+          await openDetailFromItem(item, nameEl);
           
           let downloadCount = null;
           let overlaySample = '';
@@ -480,10 +514,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const audioName = nameEl.innerText.trim();
           
           await closeOverlayAndWait();
-          item.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          window.scrollBy(0, -100);
-          await sleep(400);
-          item.click();
+          await openDetailFromItem(item, nameEl);
           
           let downloadCount = null;
           let overlaySample = '';
