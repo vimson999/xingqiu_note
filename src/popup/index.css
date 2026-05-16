@@ -16,8 +16,8 @@ button { cursor: pointer; border: none; border-radius: 4px; padding: 6px 10px; f
 .tab-content.active { display: flex; }
 
 .filter-bar, .settings-bar, .control-bar { background: white; padding: 8px; border-radius: 6px; margin-bottom: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
-.control-bar { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.control-bar button { min-width: 0; padding: 6px 4px; white-space: nowrap; }
+.control-bar { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+.control-bar button { min-width: 0; padding: 6px 3px; white-space: nowrap; font-size: 10px; }
 .file-download-rules { display: grid; grid-template-columns: 82px 95px 1fr 1fr; gap: 5px; align-items: center; }
 .file-download-rules .setting-item { display: flex; align-items: center; gap: 3px; min-width: 0; white-space: nowrap; font-size: 11px; }
 .file-download-rules input { min-width: 0; padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3px; }
@@ -47,7 +47,19 @@ select { padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3
 .btn-single-dl, .btn-single-audio-dl { background: #3c78d8; color: white; border-radius: 3px; font-size: 9px; padding: 2px 5px; }
 
 /* 音频采集面板 */
-.audio-panel { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+.audio-panel { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.audio-button-row, .audio-input-row { background: #fff; border-radius: 6px; padding: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+.audio-button-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.audio-input-row { display: grid; grid-template-columns: 95px 1fr; gap: 8px; align-items: center; }
+.audio-btn { width: 100%; min-width: 0; padding: 6px 4px; font-size: 10px; white-space: nowrap; }
+.teal-btn { background: #009688; }
+.purple-btn { background: #673ab7; }
+.red-btn { background: #f44336; }
+.blue-btn { background: #2196F3; }
+.audio-field { display: flex; align-items: center; gap: 4px; min-width: 0; color: #444; font-size: 11px; white-space: nowrap; }
+.audio-field input { height: 24px; min-width: 0; border: 1px solid #d6dbe1; border-radius: 4px; padding: 2px 6px; font-size: 11px; box-sizing: border-box; }
+.compact-count input { width: 36px; text-align: center; }
+.until-field input { flex: 1; width: 100%; }
 .audio-item { display: grid !important; grid-template-columns: 1fr 100px 40px 50px !important; align-items: center; gap: 5px; padding: 8px; border-bottom: 1px solid #eee; }
 .audio-item .col-status { text-align: center; }
 

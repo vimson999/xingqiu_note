@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnStopDeep = document.getElementById('btn-stop-deep');
   const btnStartBatch = document.getElementById('btn-start-batch');
   const btnStopBatch = document.getElementById('btn-stop-batch');
+  const btnRetryFailed = document.getElementById('btn-retry-failed');
   const btnExportList = document.getElementById('btn-export-list');
   const btnClearFiles = document.getElementById('btn-clear-files');
   const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -116,7 +117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnScanAudio.onclick = async () => {
     btnScanAudio.innerText = '扫描中...';
     const response = await safeSendMessage({ type: 'SCAN_AUDIO' });
-    btnScanAudio.innerText = '2. 扫描列表';
+    btnScanAudio.innerText = '扫描列表';
     if (!response) alert('未连接到知识星球音频页面，请确认当前标签页是音频搜索页并已刷新。');
     renderFromStorage();
   };
@@ -292,6 +293,43 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
 
+  btnRetryFailed.onclick = async () => {
+    const minCount = parseInt(document.getElementById('min-count').value) || 0;
+    const uploadStartMs = getDateTimeInputMs('upload-start-time');
+    const uploadEndMs = getDateTimeInputMs('upload-end-time');
+    const data = await chrome.storage.local.get(['pendingFiles']);
+    const currentFilter = selectInst.value;
+
+    let failedFiles = (data.pendingFiles || []).filter(f => f.status === 'failed');
+    if (currentFilter) {
+      const keywords = currentFilter.split('|');
+      failedFiles = failedFiles.filter(f => keywords.some(k => f.name.toLowerCase().includes(k.toLowerCase())));
+    }
+    if (uploadStartMs || uploadEndMs) {
+      failedFiles = failedFiles.filter(f => isWithinUploadRange(f, uploadStartMs, uploadEndMs));
+    }
+    if (minCount > 0) {
+      failedFiles = failedFiles.filter(f => (f.downloadCount || 0) >= minCount);
+    }
+
+    if (failedFiles.length === 0) {
+      alert('当前条件下没有失败文件可重新下载。');
+      return;
+    }
+    if (!confirm(`是否重新下载 ${failedFiles.length} 个失败文件？`)) return;
+
+    await showLog(`准备重新下载失败文件：${failedFiles.length} 个`);
+    chrome.runtime.sendMessage({
+      type: 'START_RETRY_FAILED_DOWNLOAD',
+      payload: {
+        filterNames: failedFiles.map(f => f.name),
+        minCount,
+        uploadStartMs,
+        uploadEndMs
+      }
+    });
+  };
+
   btnStopBatch.onclick = () => chrome.runtime.sendMessage({ type: 'STOP_BATCH_DOWNLOAD' });
 
   // 导出列表数据
@@ -361,6 +399,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 更新批量按钮状态
     btnStartBatch.style.display = isDownloading ? 'none' : 'inline-block';
     btnStopBatch.style.display = isDownloading ? 'inline-block' : 'none';
+    btnRetryFailed.style.display = isDownloading ? 'none' : 'inline-block';
     if (btnBatchAudio && btnStopAudio) {
       btnBatchAudio.style.display = isDownloading ? 'none' : 'inline-block';
       btnStopAudio.style.display = isDownloading ? 'inline-block' : 'none';

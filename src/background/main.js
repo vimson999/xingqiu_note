@@ -29,6 +29,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     return true;
   }
+  if (message.type === 'START_RETRY_FAILED_DOWNLOAD') {
+    if (isBatchRunning) {
+      addLog('WARN', '已有下载任务在运行中。');
+      sendResponse?.({ success: false, error: 'BATCH_RUNNING' });
+      return true;
+    }
+    const { filterNames, minCount, uploadStartMs, uploadEndMs } = message.payload || {};
+    stopBatchRequested = false;
+    startBatchDownload(0, minCount, filterNames, uploadStartMs, uploadEndMs, {
+      statuses: ['failed'],
+      label: '重新下载失败文件'
+    })
+      .then(() => sendResponse?.({ success: true }))
+      .catch(err => {
+        addLog('ERROR', `启动失败重试任务失败: ${err.message}`);
+        sendResponse?.({ success: false, error: err.message });
+      });
+    return true;
+  }
   if (message.type === 'STOP_BATCH_DOWNLOAD') {
     stopBatchRequested = true;
     isBatchRunning = false;
@@ -68,7 +87,7 @@ function isWithinUploadRange(file, startMs, endMs) {
   return true;
 }
 
-async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = null, uploadEndMs = null) {
+async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = null, uploadEndMs = null, options = {}) {
   isBatchRunning = true;
   await chrome.alarms.clear(FILE_BATCH_ALARM);
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -81,20 +100,21 @@ async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = 
 
   const data = await chrome.storage.local.get(['pendingFiles']);
   const pendingFiles = resetStaleProcessing(data.pendingFiles || []);
-  let tasks = pendingFiles.filter(f => f.status === 'pending');
+  const statuses = options.statuses || ['pending'];
+  let tasks = pendingFiles.filter(f => statuses.includes(f.status));
   if (filterNames?.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
   if (uploadStartMs || uploadEndMs) tasks = tasks.filter(t => isWithinUploadRange(t, uploadStartMs, uploadEndMs));
   if (minCount > 0) tasks = tasks.filter(t => (t.downloadCount || 0) >= minCount);
   if (limit > 0) tasks = tasks.slice(0, limit);
 
   if (tasks.length === 0) {
-    addLog('WARN', '无待下载文件。');
+    addLog('WARN', options.label ? `${options.label}：无可执行文件。` : '无待下载文件。');
     isBatchRunning = false;
     await chrome.storage.local.set({ pendingFiles, isDownloading: false, fileBatchState: null });
     return;
   }
 
-  addLog('INFO', `启动批量任务 [共 ${tasks.length} 个文件]`);
+  addLog('INFO', `${options.label || '启动批量任务'} [共 ${tasks.length} 个文件]`);
   await chrome.storage.local.set({
     pendingFiles,
     isDownloading: true,
