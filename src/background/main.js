@@ -57,6 +57,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'START_SINGLE_DOWNLOAD') { processSingleDownload(message.payload.fileName); }
+  if (message.type === 'START_SINGLE_AUDIO_DOWNLOAD') {
+    processSingleAudioDownload(message.payload.fileName)
+      .then(() => sendResponse?.({ success: true }))
+      .catch(err => sendResponse?.({ success: false, error: err.message }));
+    return true;
+  }
   if (message.type === 'START_BATCH_AUDIO_DOWNLOAD') {
     if (isBatchRunning) return;
     stopBatchRequested = false;
@@ -400,4 +406,14 @@ async function processSingleDownload(fileName) {
   const data = await chrome.storage.local.get(['pendingFiles']);
   const task = (data.pendingFiles || []).find(f => f.name === fileName);
   if (task) await executeDownloadTask(task, 1, 1);
+}
+
+async function processSingleAudioDownload(fileName) {
+  const data = await chrome.storage.local.get(['pendingAudio']);
+  const task = (data.pendingAudio || []).find(a => a.name === fileName);
+  if (!task) {
+    await addLog('ERROR', `音频单个下载失败: ${fileName} - NOT_FOUND_IN_AUDIO_LIST`);
+    return;
+  }
+  await executeAudioDownloadTask(task, 1, 1);
 }

@@ -76,6 +76,7 @@ async function closeOverlayAndWait(maxWaitMs = 5000) {
 
 function normalizeFileName(name = '') {
   return name
+    .replace(/\.(pdf|mp3|m4a|wav)$/i, '')
     .replace(/\.pdf$/i, '')
     .replace(/\.{3}|…/g, '')
     .replace(/\s+/g, ' ')
@@ -85,6 +86,25 @@ function normalizeFileName(name = '') {
 
 function getFileListItems() {
   return Array.from(document.querySelectorAll('.file-gallery-container .item, .file-gallery-container-box .item'));
+}
+
+function getAudioListItems() {
+  return Array.from(document.querySelectorAll([
+    '.file-container .item',
+    '.file-gallery-container .item',
+    '.file-gallery-container-box .item',
+    '.search-result-list .item',
+    '.topic-list .item',
+    '.item'
+  ].join(', '))).filter(item => getAudioNameFromItem(item));
+}
+
+function getAudioNameFromItem(item) {
+  return item.querySelector('.name, .file-name, .title, .content-title')?.innerText?.trim() || '';
+}
+
+function getAudioTimeFromItem(item) {
+  return item.querySelector('.time, .date, .create-time')?.innerText?.trim() || '未知';
 }
 
 function getVisibleDownloadButton() {
@@ -119,6 +139,19 @@ function findFileItemByName(fileName) {
 
   const prefix = wanted.substring(0, 24);
   return candidates.find(c => c.normalizedName.startsWith(prefix) || prefix.startsWith(c.normalizedName.substring(0, 24)));
+}
+
+function findAudioItemByName(audioName) {
+  const wanted = normalizeFileName(audioName);
+  const items = getAudioListItems();
+  const candidates = items.map(item => {
+    const rawName = getAudioNameFromItem(item);
+    return { item, rawName, normalizedName: normalizeFileName(rawName) };
+  }).filter(c => c.normalizedName);
+
+  return candidates.find(c => c.normalizedName === wanted)
+    || candidates.find(c => wanted.includes(c.normalizedName) || c.normalizedName.includes(wanted))
+    || candidates.find(c => namesMatch(c.rawName, audioName));
 }
 
 function namesMatch(a = '', b = '') {
@@ -361,10 +394,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'SCAN_AUDIO') {
-    const items = document.querySelectorAll('.file-container .item');
+    const items = getAudioListItems();
     const newAudio = Array.from(items).map(item => {
-      const name = item.querySelector('.name')?.innerText.trim();
-      const uploadTime = item.querySelector('.time')?.innerText.trim() || '未知';
+      const name = getAudioNameFromItem(item);
+      const uploadTime = getAudioTimeFromItem(item);
       return name ? { name, uploadTime, downloadCount: 0, status: 'pending' } : null;
     }).filter(Boolean);
 
@@ -402,9 +435,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         const { fileName } = message.payload;
         await ensureCleanSlate();
-        const items = document.querySelectorAll('.file-container .item');
-        const targetItem = Array.from(items).find(item => item.querySelector('.name')?.innerText.includes(fileName.substring(0, 15)));
-        if (!targetItem) { sendResponse({ success: false, error: 'NOT_FOUND' }); return; }
+        const targetMatch = findAudioItemByName(fileName);
+        if (!targetMatch) {
+          const seen = getAudioListItems().slice(0, 8).map(item => getAudioNameFromItem(item));
+          await appendOperationLog(`音频下载未找到页面条目: ${fileName}`, { seen });
+          sendResponse({ success: false, error: 'NOT_FOUND' });
+          return;
+        }
+        const targetItem = targetMatch.item;
         
         const clickAudio = () => { targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' }); window.scrollBy(0, -100); setTimeout(() => targetItem.click(), 400); };
         clickAudio();
@@ -502,16 +540,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       try {
         isDeepScanStopped = false;
         internalLog("开始深度扫描音频下载量...");
-        const items = document.querySelectorAll('.file-container .item');
+        const items = getAudioListItems();
         await appendOperationLog(`音频下载量获取开始，发现 ${items.length} 个页面条目`);
         let count = 0;
         let failed = 0;
         for (const item of items) {
           if (isDeepScanStopped) { internalLog("音频深度扫描已停止"); break; }
           
-          const nameEl = item.querySelector('.name');
-          if (!nameEl) continue;
-          const audioName = nameEl.innerText.trim();
+          const audioName = getAudioNameFromItem(item);
+          if (!audioName) continue;
+          const nameEl = item.querySelector('.name, .file-name, .title, .content-title') || item;
           
           await closeOverlayAndWait();
           await openDetailFromItem(item, nameEl);

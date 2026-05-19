@@ -462,7 +462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <span class="file-time">${a.uploadTime || '-'}</span>
             <span class="file-count ${a.downloadCount > 30 ? 'count-high' : ''}" style="text-align:center;">${a.downloadCount || 0}</span>
             <div class="col-status">
-              ${a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${a.status === 'done' ? '完成' : '处理'}</span>`}
+              ${a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${getStatusText(a.status)}</span>`}
             </div>
           </li>
         `).join('');
