@@ -85,6 +85,9 @@
 ### 难点 H：音频采集操作区视觉杂乱
 - **对策**: 将音频 tab 顶部合并为朴素的“按钮一排、输入一排”，去掉“数据采集/批量操作”的分组概念，统一按钮和输入框尺寸。
 
+### 调整 I：批量下载间隔
+- **调整**: 将批量下载间隔从 20 秒改为 10 秒，用于提升研报批量下载效率。
+
 ## 4. 提交记录
 - `eb0963e` - Stabilize batch file downloads
 - `24e933e` - Restore audio scan and limit batch downloads

@@ -20,7 +20,7 @@ export const SETTINGS = {
 
   // 延时策略 (防反爬)
   DELAY: {
-    BATCH_INTERVAL: 20000, // 批量下载之间的间隔 (20s)
+    BATCH_INTERVAL: 10000, // 批量下载之间的间隔 (10s)
     CLICK_WAIT: 1500,      // 点击文件项后等待下载按钮出现的延迟
     PAGE_LOAD_WAIT: 3000
   },
