@@ -1,6 +1,6 @@
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
- * 默认排序：按下载量从高到低 (count_desc)
+ * 默认排序：按上传时间从新到旧 (time_desc)
  */
 
 const INSTITUTIONS = [
