@@ -107,6 +107,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return true;
   }
 
+  function isUploadedToday(file) {
+    const uploadMs = parseUploadTimeValue(file.uploadTime);
+    if (!uploadMs) return false;
+    const uploadDate = new Date(uploadMs);
+    const today = new Date();
+    return uploadDate.getFullYear() === today.getFullYear()
+      && uploadDate.getMonth() === today.getMonth()
+      && uploadDate.getDate() === today.getDate();
+  }
+
   // --- 5. 核心操作绑定 ---
 
   // 音频采集
@@ -426,6 +436,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 3. 渲染
     document.getElementById('count-found').innerText = files.length;
+    document.getElementById('count-today').innerText = files.filter(isUploadedToday).length;
     document.getElementById('count-done').innerText = (data.pendingFiles || []).filter(f => f.status === 'done').length;
 
     fileListEl.innerHTML = files.length === 0 

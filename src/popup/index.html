@@ -52,6 +52,7 @@
 
     <div class="stats">
       <span>当前显示: <b id="count-found">0</b></span>
+      <span>今日文件: <b id="count-today">0</b></span>
       <span>累计完成: <b id="count-done">0</b></span>
     </div>
     
@@ -69,7 +70,11 @@
 
   <div id="tab-audio" class="tab-content">
     <div class="audio-panel">
-      <div class="audio-button-row">
+      <div class="settings-bar audio-download-rules">
+        <label class="setting-item">下载前 <input type="number" id="audio-download-limit" value="5" min="1"> 个</label>
+        <label class="setting-item until-field">截止到 <input type="text" id="audio-download-until" placeholder="文件名..."></label>
+      </div>
+      <div class="control-bar audio-control-bar">
         <button id="btn-go-audio" class="primary-btn audio-btn teal-btn">进入搜索页</button>
         <button id="btn-scan-audio" class="primary-btn audio-btn">扫描列表</button>
         <button id="btn-deep-scan-audio" class="primary-btn audio-btn purple-btn">获取下载量</button>
@@ -79,10 +84,6 @@
         <button id="btn-export-audio" class="primary-btn audio-btn blue-btn">导出 CSV</button>
         <button id="btn-clear-audio" class="danger-btn audio-btn">清空</button>
         <button id="btn-clear-audio-history" class="danger-btn audio-btn">清除记录</button>
-      </div>
-      <div class="audio-input-row">
-        <label class="audio-field compact-count">下载前 <input type="number" id="audio-download-limit" value="5" min="1"> 个</label>
-        <label class="audio-field until-field">截止到 <input type="text" id="audio-download-until" placeholder="文件名..."></label>
       </div>
     </div>
     <div class="stats">
