@@ -36,6 +36,11 @@ select { padding: 3px; font-size: 11px; border: 1px solid #ddd; border-radius: 3
 .list { flex: 1; list-style: none; padding: 0; margin: 0; background: white; border-radius: 0 0 6px 6px; overflow-y: auto; }
 
 .file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.file-item.download-tier-25 { background: #fff8e1; }
+.file-item.download-tier-30 { background: #ffe0b2; }
+.file-item.downloaded { background: #e6f4ea; }
+.file-item.download-tier-25.downloaded { background: #fff8e1; box-shadow: inset 4px 0 #34a853; }
+.file-item.download-tier-30.downloaded { background: #ffe0b2; box-shadow: inset 4px 0 #34a853; }
 .col-time, .file-time { font-size: 10px; color: #777; text-align: center; }
 .col-count, .file-count { font-size: 10px; color: #444; text-align: center; font-weight: bold; }
 .count-high { color: #ff5722 !important; font-size: 12px !important; text-decoration: underline; }

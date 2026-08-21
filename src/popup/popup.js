@@ -77,7 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const data = await chrome.storage.local.get(['logs']);
     const logs = data.logs || [];
     logs.push({ timestamp: Date.now(), message });
-    if (logs.length > 200) logs.shift();
+    if (logs.length > 1000) logs.shift();
     await chrome.storage.local.set({ logs });
   }
 
@@ -263,11 +263,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minCount = parseInt(document.getElementById('min-count').value) || 0;
     const uploadStartMs = getDateTimeInputMs('upload-start-time');
     const uploadEndMs = getDateTimeInputMs('upload-end-time');
-    const data = await chrome.storage.local.get(['pendingFiles']);
+    const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
+    const downloadedHistory = data.downloadedHistory || [];
     const currentFilter = selectInst.value;
     
     // 应用当前筛选
-    let filesToDownload = data.pendingFiles || [];
+    let filesToDownload = (data.pendingFiles || []).filter(f => (
+      f.status !== 'done' && !downloadedHistory.includes(f.name)
+    ));
     if (currentFilter) {
       const keywords = currentFilter.split('|');
       filesToDownload = filesToDownload.filter(f => keywords.some(k => f.name.toLowerCase().includes(k.toLowerCase())));
@@ -356,8 +359,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 清空 & 导出管理
   btnClearFiles.onclick = async () => {
-    if (confirm('确定清空文件列表并重置下载历史？')) {
-      await chrome.storage.local.set({ pendingFiles: [], downloadedHistory: [] });
+    if (confirm('确定清空当前文件列表？已下载历史会保留，之后重新扫描仍会跳过已下载文件。')) {
+      await chrome.storage.local.set({ pendingFiles: [] });
       renderFromStorage();
     }
   };
@@ -391,8 +394,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function renderFromStorage() {
-    const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'logs', 'isDownloading']);
+    const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'logs', 'isDownloading']);
     let files = data.pendingFiles || [];
+    const downloadedHistory = data.downloadedHistory || [];
     const audioItems = data.pendingAudio || [];
     const isDownloading = data.isDownloading || false;
 
@@ -426,16 +430,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     fileListEl.innerHTML = files.length === 0 
       ? '<li class="empty-hint">无内容</li>'
-      : files.map(f => `
-        <li class="file-item">
+      : files.map(f => {
+        const isDownloaded = f.status === 'done' || downloadedHistory.includes(f.name);
+        return `
+        <li class="file-item ${f.downloadCount >= 30 ? 'download-tier-30' : f.downloadCount >= 25 ? 'download-tier-25' : ''} ${isDownloaded ? 'downloaded' : ''}">
           <span class="file-name" title="${f.name}">${f.name}</span>
           <span class="file-time">${f.uploadTime || '-'}</span>
-          <span class="file-count ${f.downloadCount > 30 ? 'count-high' : ''}">${f.downloadCount || 0}</span>
+          <span class="file-count ${f.downloadCount >= 30 ? 'count-high' : ''}">${f.downloadCount || 0}</span>
           <div class="col-status">
-            ${f.status === 'pending' ? `<button class="btn-single-dl" data-name="${f.name}">下载</button>` : `<span class="status-badge status-${f.status}">${getStatusText(f.status)}</span>`}
+            ${isDownloaded ? '<span class="status-badge status-done">已下载</span>' : f.status === 'pending' ? `<button class="btn-single-dl" data-name="${f.name}">下载</button>` : `<span class="status-badge status-${f.status}">${getStatusText(f.status)}</span>`}
           </div>
         </li>
-      `).join('');
+      `;
+      }).join('');
 
     // 单个下载按钮绑定
     document.querySelectorAll('.btn-single-dl').forEach(btn => {

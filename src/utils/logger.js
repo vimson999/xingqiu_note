@@ -59,8 +59,8 @@ export const logger = {
       };
       const { logs = [] } = await chrome.storage.local.get('logs');
       logs.push(errorLog);
-      // 仅保留最近 100 条错误日志
-      if (logs.length > 100) logs.shift();
+      // 仅保留最近 1000 条日志
+      if (logs.length > 1000) logs.shift();
       await chrome.storage.local.set({ logs });
     } catch (e) {
       console.warn('Persistent logging failed:', e);

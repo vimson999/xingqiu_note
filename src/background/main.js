@@ -104,10 +104,11 @@ async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = 
     return;
   }
 
-  const data = await chrome.storage.local.get(['pendingFiles']);
+  const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
   const pendingFiles = resetStaleProcessing(data.pendingFiles || []);
+  const downloadedHistory = data.downloadedHistory || [];
   const statuses = options.statuses || ['pending'];
-  let tasks = pendingFiles.filter(f => statuses.includes(f.status));
+  let tasks = pendingFiles.filter(f => statuses.includes(f.status) && !downloadedHistory.includes(f.name));
   if (filterNames?.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
   if (uploadStartMs || uploadEndMs) tasks = tasks.filter(t => isWithinUploadRange(t, uploadStartMs, uploadEndMs));
   if (minCount > 0) tasks = tasks.filter(t => (t.downloadCount || 0) >= minCount);
@@ -221,6 +222,7 @@ async function executeDownloadTask(task, current, total, targetTabId = null) {
         downloadId: download.id || null,
         downloadFilename: download.filename || ''
       });
+      await closeDownloadOverlay(tab.id, task.name);
       addLog('INFO', `[${current}/${total}] 成功 | ${cost}s | ${task.name}`);
     } else {
       throw new Error(response?.error || 'UNKNOWN_PAGE_ERR');
@@ -230,6 +232,15 @@ async function executeDownloadTask(task, current, total, targetTabId = null) {
     addLog('ERROR', `[${current}/${total}] 失败 | ${cost}s | ${err.message} | ${task.name}`);
     await updateFileStatus(task.name, 'failed', { processingStartedAt: null, lastError: err.message });
   }
+}
+
+function closeDownloadOverlay(tabId, fileName) {
+  return new Promise(resolve => {
+    chrome.tabs.sendMessage(tabId, {
+      type: 'CLOSE_DOWNLOAD_OVERLAY',
+      payload: { fileName }
+    }, () => resolve());
+  });
 }
 
 async function updateFileStatus(fileName, status, extra = {}) {
@@ -374,7 +385,11 @@ async function executeAudioDownloadTask(task, current, total) {
       new Promise(r => chrome.tabs.sendMessage(tab.id, { type: 'TRIGGER_AUDIO_CLICK', payload: { fileName: task.name } }, res => r(res || { success: false, error: 'NO_RES' }))),
       new Promise(r => setTimeout(() => r({ success: false, error: 'TIMEOUT' }), 25000))
     ]);
-    if (response?.success) { await updateAudioStatus(task.name, 'done'); addLog('INFO', `音频成功: ${task.name}`); }
+    if (response?.success) {
+      await updateAudioStatus(task.name, 'done');
+      await closeDownloadOverlay(tab.id, task.name);
+      addLog('INFO', `音频成功: ${task.name}`);
+    }
     else throw new Error(response?.error || 'ERR');
   } catch (err) { addLog('ERROR', `音频失败: ${task.name} - ${err.message}`); await updateAudioStatus(task.name, 'failed'); }
 }
@@ -399,7 +414,7 @@ async function addLog(level, message) {
   const formattedMsg = `[${timestamp}] ${message}`;
   console.log(`[Background] [${level}] ${formattedMsg}`);
   logs.push({ timestamp: Date.now(), level, message: formattedMsg });
-  if (logs.length > 200) logs.shift();
+  if (logs.length > 1000) logs.shift();
   await chrome.storage.local.set({ logs });
 }
 async function processSingleDownload(fileName) {

@@ -18,7 +18,7 @@ async function appendOperationLog(message, data = null) {
       level: 'DEBUG',
       message: `[Content] ${message}${detail}`
     });
-    if (logs.length > 200) logs.shift();
+    if (logs.length > 1000) logs.shift();
     await chrome.storage.local.set({ logs });
   } catch (err) {
     internalLog('Failed to append operation log', err);
@@ -72,6 +72,80 @@ async function ensureCleanSlate(maxWaitMs = 5000) {
 async function closeOverlayAndWait(maxWaitMs = 5000) {
   triggerCloseActions();
   return ensureCleanSlate(maxWaitMs);
+}
+
+function isVisibleForClose(element) {
+  if (!element || !element.isConnected) return false;
+  const style = window.getComputedStyle(element);
+  const rect = element.getBoundingClientRect();
+  return style.display !== 'none'
+    && style.visibility !== 'hidden'
+    && style.opacity !== '0'
+    && rect.width > 0
+    && rect.height > 0;
+}
+
+function dispatchCloseClick(element, clientX = null, clientY = null) {
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const options = {
+    view: window,
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX: clientX ?? rect.left + rect.width / 2,
+    clientY: clientY ?? rect.top + rect.height / 2,
+    button: 0
+  };
+  if (window.PointerEvent) element.dispatchEvent(new PointerEvent('pointerdown', options));
+  element.dispatchEvent(new MouseEvent('mousedown', options));
+  if (window.PointerEvent) element.dispatchEvent(new PointerEvent('pointerup', options));
+  element.dispatchEvent(new MouseEvent('mouseup', options));
+  element.dispatchEvent(new MouseEvent('click', options));
+}
+
+async function closeOverlayAfterDownload() {
+  const overlays = Array.from(document.querySelectorAll(
+    '.file-preview-container, .cdk-overlay-pane, .dialog-container, .detail-layer, [role="dialog"]'
+  )).filter(isVisibleForClose);
+  const closeSelector = '.icon-close, .close-button, .close, .btn-close, [title="关闭"], [aria-label="关闭"]';
+  let closed = false;
+
+  for (const overlay of overlays) {
+    // Use the same area a user would click: the lower-left or lower-right
+    // corner outside the detail panel, not the center of the overlay root.
+    const outsidePoints = [
+      [10, Math.max(10, window.innerHeight - 10)],
+      [Math.max(10, window.innerWidth - 10), Math.max(10, window.innerHeight - 10)],
+      [10, Math.max(10, Math.round(window.innerHeight / 2))],
+      [Math.max(10, window.innerWidth - 10), Math.max(10, Math.round(window.innerHeight / 2))]
+    ];
+    const backdropSelector = '.file-preview-container, .cdk-overlay-backdrop, .overlay-backdrop, .dialog-backdrop, .modal-backdrop, .el-overlay, .van-overlay, [class*="mask"]';
+    const backdropHit = outsidePoints.map(([x, y]) => {
+      const target = document.elementFromPoint(x, y);
+      const backdrop = target?.closest?.(backdropSelector);
+      return backdrop && isVisibleForClose(backdrop) ? { backdrop, x, y } : null;
+    }).find(Boolean);
+
+    if (backdropHit) {
+      // The page closes this layer from an outside click; double-click the
+      // lower-left hit first to tolerate a missed synthetic event.
+      dispatchCloseClick(backdropHit.backdrop, backdropHit.x, backdropHit.y);
+      dispatchCloseClick(backdropHit.backdrop, backdropHit.x, backdropHit.y);
+      closed = true;
+      break;
+    }
+
+    const closeButton = Array.from(overlay.querySelectorAll(closeSelector)).find(isVisibleForClose);
+    if (closeButton) {
+      dispatchCloseClick(closeButton);
+      closed = true;
+      break;
+    }
+  }
+
+  if (!closed) triggerCloseActions();
+  await ensureCleanSlate(3000);
 }
 
 function normalizeFileName(name = '') {
@@ -332,8 +406,6 @@ async function clickFileAndWaitForDownload(fileName) {
           actualText: (container?.innerText || '').substring(0, 120)
         });
         btn.click();
-        await sleep(2500);
-        await closeOverlayAndWait();
         return { success: true, clickedDownload: describeElement(btn, container) };
       }
 
@@ -429,6 +501,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'CLOSE_DOWNLOAD_OVERLAY') {
+    (async () => {
+      await closeOverlayAfterDownload();
+      sendResponse({ success: true });
+    })();
+    return true;
+  }
+
   // 音频逻辑保持一致性
   if (message.type === 'TRIGGER_AUDIO_CLICK') {
     (async () => {
@@ -456,8 +536,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if ((container?.innerText || '').includes(fileName.substring(0, 10))) {
               clearInterval(checkInterval);
               btn.click();
-              await sleep(2500);
-              triggerCloseActions();
               sendResponse({ success: true });
               return;
             }
