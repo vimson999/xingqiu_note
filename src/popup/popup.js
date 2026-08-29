@@ -1,3 +1,6 @@
+import { SETTINGS } from '../config/settings.js';
+import { formatBatchProgress } from '../utils/batch-progress.mjs';
+
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
  * 默认排序：按上传时间从新到旧 (time_desc)
@@ -13,6 +16,30 @@ const INSTITUTIONS = [
   { label: '中信证券 (CITIC)', keywords: ['中信', 'CITIC'] }
 ];
 
+const REMOTE_HISTORY_CONFIG_KEY = 'remoteHistoryConfig';
+let privateRemoteHistoryCredentials = {};
+
+async function loadPrivateRemoteHistoryCredentials() {
+  try {
+    const privateModule = await import('../private/remote-history-credentials.js');
+    return privateModule.REMOTE_HISTORY_CREDENTIALS || {};
+  } catch {
+    return {};
+  }
+}
+
+function getDefaultRemoteHistoryConfig() {
+  return {
+    endpoint: SETTINGS.REMOTE_HISTORY.ENDPOINT,
+    appId: privateRemoteHistoryCredentials.appId || '',
+    appSecret: privateRemoteHistoryCredentials.appSecret || '',
+    groupId: SETTINGS.REMOTE_HISTORY.DEFAULT_GROUP_ID,
+    pdfTabId: SETTINGS.REMOTE_HISTORY.DEFAULT_PDF_TAB_ID,
+    mp3TabId: SETTINGS.REMOTE_HISTORY.DEFAULT_MP3_TAB_ID,
+    days: SETTINGS.REMOTE_HISTORY.DEFAULT_DAYS
+  };
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. 按钮 & 元素定义
   const btnScan = document.getElementById('btn-scan');
@@ -23,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnRetryFailed = document.getElementById('btn-retry-failed');
   const btnExportList = document.getElementById('btn-export-list');
   const btnClearFiles = document.getElementById('btn-clear-files');
+  const btnSyncFileHistory = document.getElementById('btn-sync-file-history');
   const btnClearLogs = document.getElementById('btn-clear-logs');
   const btnExportLogs = document.getElementById('btn-export-logs');
 
@@ -33,15 +61,39 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnStopDeepAudio = document.getElementById('btn-stop-deep-audio');
   const btnBatchAudio = document.getElementById('btn-batch-audio');
   const btnStopAudio = document.getElementById('btn-stop-audio');
+  const btnRetryFailedAudio = document.getElementById('btn-retry-failed-audio');
+  const audioSort = document.getElementById('audio-sort');
   const btnExportAudio = document.getElementById('btn-export-audio');
   const btnClearAudio = document.getElementById('btn-clear-audio');
   const btnClearAudioHistory = document.getElementById('btn-clear-audio-history');
+  const btnSyncAudioHistory = document.getElementById('btn-sync-audio-history');
   const audioListEl = document.getElementById('audio-list');
   
   const selectInst = document.getElementById('select-institution');
   const selectSort = document.getElementById('select-sort');
   const fileListEl = document.getElementById('file-list');
   const logViewerEl = document.getElementById('log-viewer');
+  const btnSaveRemoteHistoryConfig = document.getElementById('btn-save-remote-history-config');
+
+  function renderBatchProgress(kind, progress) {
+    const container = document.getElementById(`${kind}-batch-progress`);
+    if (!container) return;
+    const total = Number(progress?.total) || 0;
+    const isRelevant = progress?.kind === (kind === 'file' ? 'file' : 'audio') && total > 0;
+    container.hidden = !isRelevant;
+    if (!isRelevant) return;
+
+    const formatted = formatBatchProgress(progress);
+    const bar = document.getElementById(`${kind}-batch-progress-bar`);
+    const text = document.getElementById(`${kind}-batch-progress-text`);
+    const name = document.getElementById(`${kind}-batch-progress-name`);
+    text.textContent = formatted.summary;
+    name.textContent = formatted.currentName;
+    name.title = formatted.currentName;
+    bar.max = total;
+    bar.value = Math.min(Number(progress.current) || 0, total);
+    container.className = `batch-progress phase-${progress.phase || 'idle'}`;
+  }
 
   // 2. 初始化机构下拉框
   INSTITUTIONS.forEach(inst => {
@@ -72,6 +124,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  async function sendRuntimeMessage(message) {
+    return new Promise(resolve => {
+      chrome.runtime.sendMessage(message, response => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: 'EXTENSION_MESSAGE_FAILED' });
+          return;
+        }
+        resolve(response || { success: false, error: 'NO_RESPONSE' });
+      });
+    });
+  }
+
+  async function reconcileAudioDownloadHistory() {
+    return sendRuntimeMessage({ type: 'RECONCILE_AUDIO_DOWNLOAD_HISTORY' });
+  }
+
   // 快捷日志显示
   async function showLog(message) {
     const data = await chrome.storage.local.get(['logs']);
@@ -79,6 +147,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     logs.push({ timestamp: Date.now(), message });
     if (logs.length > 1000) logs.shift();
     await chrome.storage.local.set({ logs });
+  }
+
+  function getRemoteHistoryConfigFromForm() {
+    const defaults = getDefaultRemoteHistoryConfig();
+    const days = Number.parseInt(document.getElementById('remote-history-days').value, 10);
+    return {
+      endpoint: document.getElementById('remote-history-endpoint').value.trim() || defaults.endpoint,
+      appId: document.getElementById('remote-history-app-id').value.trim(),
+      appSecret: document.getElementById('remote-history-secret').value.trim(),
+      groupId: document.getElementById('remote-history-group-id').value.trim() || defaults.groupId,
+      pdfTabId: document.getElementById('remote-history-pdf-tab-id').value.trim(),
+      mp3TabId: document.getElementById('remote-history-mp3-tab-id').value.trim(),
+      days: Number.isFinite(days) && days > 0 ? days : defaults.days
+    };
+  }
+
+  function fillRemoteHistoryConfig(rawConfig = {}) {
+    const defaults = getDefaultRemoteHistoryConfig();
+    const config = {
+      endpoint: rawConfig.endpoint || defaults.endpoint,
+      appId: rawConfig.appId || defaults.appId,
+      appSecret: rawConfig.appSecret || defaults.appSecret,
+      groupId: rawConfig.groupId || defaults.groupId,
+      pdfTabId: rawConfig.pdfTabId || defaults.pdfTabId,
+      mp3TabId: rawConfig.mp3TabId || defaults.mp3TabId,
+      days: rawConfig.days || defaults.days
+    };
+    document.getElementById('remote-history-endpoint').value = config.endpoint;
+    document.getElementById('remote-history-app-id').value = config.appId;
+    document.getElementById('remote-history-secret').value = config.appSecret;
+    document.getElementById('remote-history-group-id').value = config.groupId;
+    document.getElementById('remote-history-pdf-tab-id').value = config.pdfTabId;
+    document.getElementById('remote-history-mp3-tab-id').value = config.mp3TabId;
+    document.getElementById('remote-history-days').value = config.days;
+  }
+
+  async function persistRemoteHistoryConfig() {
+    const config = getRemoteHistoryConfigFromForm();
+    await chrome.storage.local.set({ [REMOTE_HISTORY_CONFIG_KEY]: config });
+    return config;
+  }
+
+  async function syncRemoteHistory(kind, button) {
+    const originalText = button.innerText;
+    button.disabled = true;
+    button.innerText = '同步中...';
+    try {
+      await persistRemoteHistoryConfig();
+      const result = await sendRuntimeMessage({ type: 'SYNC_REMOTE_HISTORY', payload: { kind } });
+      if (!result.success) {
+        alert(result.message || `同步失败：${result.error || 'UNKNOWN_ERROR'}`);
+        return;
+      }
+      const label = kind === 'pdf' ? 'PDF' : '音频';
+      alert(`${label} 下载历史同步完成：服务端返回 ${result.receivedCount} 条，可信 ${result.trustedCount} 条，本地列表标记 ${result.matchedCount} 条。`);
+      await renderFromStorage();
+    } finally {
+      button.disabled = false;
+      button.innerText = originalText;
+    }
   }
 
   function parseUploadTimeValue(value) {
@@ -124,11 +252,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.tabs.create({ url: 'https://wx.zsxq.com/search/mp3?groupId=28888112822211&searchUid=0.8761816833421697' });
   };
 
+  btnSaveRemoteHistoryConfig.onclick = async () => {
+    await persistRemoteHistoryConfig();
+    alert('远端下载历史配置已保存。');
+  };
+
+  btnSyncFileHistory.onclick = () => syncRemoteHistory('pdf', btnSyncFileHistory);
+  btnSyncAudioHistory.onclick = () => syncRemoteHistory('mp3', btnSyncAudioHistory);
+
   btnScanAudio.onclick = async () => {
     btnScanAudio.innerText = '扫描中...';
     const response = await safeSendMessage({ type: 'SCAN_AUDIO' });
     btnScanAudio.innerText = '扫描列表';
     if (!response) alert('未连接到知识星球音频页面，请确认当前标签页是音频搜索页并已刷新。');
+    else await reconcileAudioDownloadHistory();
     renderFromStorage();
   };
 
@@ -152,12 +289,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnBatchAudio.onclick = async () => {
     if (confirm('是否开始批量下载音频？')) {
       const limit = parseInt(document.getElementById('audio-download-limit').value) || 5;
+      const minCount = parseInt(document.getElementById('audio-min-count').value) || 0;
       const untilName = document.getElementById('audio-download-until').value.trim();
-      const data = await chrome.storage.local.get(['pendingAudio']);
-      let audioItems = data.pendingAudio || [];
+      const uploadStartMs = getDateTimeInputMs('audio-upload-start-time');
+      const uploadEndMs = getDateTimeInputMs('audio-upload-end-time');
+      const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
+      const downloadedAudioHistory = data.downloadedAudioHistory || [];
+      let audioItems = (data.pendingAudio || []).filter(a => (
+        a.status !== 'done'
+        && !downloadedAudioHistory.includes(a.name)
+        && (minCount <= 0 || (a.downloadCount || 0) >= minCount)
+        && isWithinUploadRange(a, uploadStartMs, uploadEndMs)
+      ));
       
       // 排序 logic 与渲染保持一致
-      audioItems.sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0));
+      audioItems.sort((a, b) => audioSort.value === 'count_desc'
+        ? (b.downloadCount || 0) - (a.downloadCount || 0)
+        : (b.uploadTime || '').localeCompare(a.uploadTime || ''));
 
       let audioToDownload = [];
       const pendingItems = audioItems.filter(a => a.status === 'pending');
@@ -183,9 +331,45 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       chrome.runtime.sendMessage({
         type: 'START_BATCH_AUDIO_DOWNLOAD',
-        payload: { limit: audioToDownload.length, filterNames: audioToDownload.map(a => a.name) }
+        payload: {
+          limit: audioToDownload.length,
+          minCount,
+          uploadStartMs,
+          uploadEndMs,
+          sort: audioSort.value,
+          filterNames: audioToDownload.map(a => a.name)
+        }
       });
     }
+  };
+
+  btnRetryFailedAudio.onclick = async () => {
+    const minCount = parseInt(document.getElementById('audio-min-count').value) || 0;
+    const uploadStartMs = getDateTimeInputMs('audio-upload-start-time');
+    const uploadEndMs = getDateTimeInputMs('audio-upload-end-time');
+    const data = await chrome.storage.local.get(['pendingAudio']);
+    const failedAudio = (data.pendingAudio || []).filter(a => (
+      a.status === 'failed'
+      && (minCount <= 0 || (a.downloadCount || 0) >= minCount)
+      && isWithinUploadRange(a, uploadStartMs, uploadEndMs)
+    ));
+    if (failedAudio.length === 0) {
+      alert('当前条件下没有失败音频可重新下载。');
+      return;
+    }
+    if (!confirm(`是否重新下载 ${failedAudio.length} 个失败音频？`)) return;
+    chrome.runtime.sendMessage({
+      type: 'START_BATCH_AUDIO_DOWNLOAD',
+      payload: {
+        retryFailed: true,
+        limit: 0,
+        minCount,
+        uploadStartMs,
+        uploadEndMs,
+        sort: audioSort.value,
+        filterNames: failedAudio.map(a => a.name)
+      }
+    });
   };
 
   btnStopAudio.onclick = () => chrome.runtime.sendMessage({ type: 'STOP_BATCH_DOWNLOAD' });
@@ -247,6 +431,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const response = await safeSendMessage({ type: messageType });
     btnScan.innerText = '刷新当前页';
     if (!response) alert('未连接到知识星球页面，请确认当前标签页是 zsxq.com 并已刷新。');
+    else if (activeTab === 'audio') await reconcileAudioDownloadHistory();
     renderFromStorage();
   };
 
@@ -392,6 +577,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 排序 & 筛选变化
   selectInst.onchange = () => renderFromStorage();
   selectSort.onchange = () => renderFromStorage();
+  ['audio-upload-start-time', 'audio-upload-end-time'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => renderFromStorage());
+  });
+  audioSort?.addEventListener('change', () => renderFromStorage());
 
   // 6. 存储变化实时更新 UI
   chrome.storage.onChanged.addListener(() => renderFromStorage());
@@ -404,10 +593,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function renderFromStorage() {
-    const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'logs', 'isDownloading']);
+    const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'downloadedAudioHistory', 'logs', 'isDownloading', 'batchDownloadProgress']);
     let files = data.pendingFiles || [];
     const downloadedHistory = data.downloadedHistory || [];
-    const audioItems = data.pendingAudio || [];
+    const downloadedAudioHistory = data.downloadedAudioHistory || [];
+    const audioUploadStartMs = getDateTimeInputMs('audio-upload-start-time');
+    const audioUploadEndMs = getDateTimeInputMs('audio-upload-end-time');
+    let audioItems = (data.pendingAudio || []).filter(a => (
+      isWithinUploadRange(a, audioUploadStartMs, audioUploadEndMs)
+    ));
     const isDownloading = data.isDownloading || false;
 
     // 更新批量按钮状态
@@ -417,7 +611,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btnBatchAudio && btnStopAudio) {
       btnBatchAudio.style.display = isDownloading ? 'none' : 'inline-block';
       btnStopAudio.style.display = isDownloading ? 'inline-block' : 'none';
+      if (btnRetryFailedAudio) btnRetryFailedAudio.style.display = isDownloading ? 'none' : 'inline-block';
     }
+    renderBatchProgress('file', data.batchDownloadProgress);
+    renderBatchProgress('audio', data.batchDownloadProgress);
 
     // 1. 筛选
     const filterVal = selectInst.value;
@@ -468,22 +665,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const audioFoundCountEl = document.getElementById('audio-found-count');
     if (audioFoundCountEl) audioFoundCountEl.innerText = audioItems.length;
 
-    // 默认按下载量排序 (如果已经 Deep Scan)
-    audioItems.sort((a, b) => (b.downloadCount || 0) - (a.downloadCount || 0));
+    audioItems.sort((a, b) => audioSort.value === 'count_desc'
+      ? (b.downloadCount || 0) - (a.downloadCount || 0)
+      : (b.uploadTime || '').localeCompare(a.uploadTime || ''));
 
     if (audioListEl) {
       audioListEl.innerHTML = audioItems.length === 0 
         ? '<li class="empty-hint">进入音频搜索页后点击“扫描”</li>'
-        : audioItems.map(a => `
-          <li class="audio-item">
+        : audioItems.map(a => {
+          const isAudioDownloaded = a.status === 'done' || downloadedAudioHistory.includes(a.name);
+          return `
+          <li class="audio-item ${a.downloadCount >= 30 ? 'audio-tier-30' : a.downloadCount >= 20 ? 'audio-tier-20' : a.downloadCount >= 10 ? 'audio-tier-10' : ''} ${isAudioDownloaded ? 'downloaded' : ''}">
             <span class="file-name" title="${a.name}">${a.name}</span>
             <span class="file-time">${a.uploadTime || '-'}</span>
-            <span class="file-count ${a.downloadCount > 30 ? 'count-high' : ''}" style="text-align:center;">${a.downloadCount || 0}</span>
+            <span class="file-count ${a.downloadCount >= 30 ? 'count-high' : ''}" style="text-align:center;">${a.downloadCount || 0}</span>
             <div class="col-status">
-              ${a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${getStatusText(a.status)}</span>`}
+              ${isAudioDownloaded ? '<span class="status-badge status-done">已下载</span>' : a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${getStatusText(a.status)}</span>`}
             </div>
           </li>
-        `).join('');
+        `;
+        }).join('');
 
       // 音频下载按钮绑定
       document.querySelectorAll('.btn-single-audio-dl').forEach(btn => {
@@ -502,5 +703,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  privateRemoteHistoryCredentials = await loadPrivateRemoteHistoryCredentials();
+  const storedConfig = await chrome.storage.local.get(REMOTE_HISTORY_CONFIG_KEY);
+  fillRemoteHistoryConfig(storedConfig[REMOTE_HISTORY_CONFIG_KEY]);
   renderFromStorage();
 });

@@ -10,6 +10,16 @@ export const SETTINGS = {
   BASE_URL: 'https://zsxq.com',
   AUDIO_SEARCH_URL: 'https://wx.zsxq.com/search/mp3?groupId=28888112822211&searchUid=0.8761816833421697',
 
+  // 远端下载历史同步（凭证仅保存于扩展本地存储，不写入源码）
+  REMOTE_HISTORY: {
+    ENDPOINT: 'https://ji448ziqobpp.ngrok.xiaomiqiu123.top/api/v1/zsxq/browser-import/history',
+    REQUEST_PATH: '/api/v1/zsxq/browser-import/history',
+    DEFAULT_GROUP_ID: '28888112822211',
+    DEFAULT_PDF_TAB_ID: '51184248544214',
+    DEFAULT_MP3_TAB_ID: '88844545452542',
+    DEFAULT_DAYS: 3
+  },
+
   // 下载相关配置
   DOWNLOAD: {
     DEFAULT_FOLDER: 'zsxq-downloads',

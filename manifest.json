@@ -10,7 +10,8 @@
     "alarms"
   ],
   "host_permissions": [
-    "https://*.zsxq.com/*"
+    "https://*.zsxq.com/*",
+    "https://ji448ziqobpp.ngrok.xiaomiqiu123.top/*"
   ],
   "action": {
     "default_popup": "src/popup/index.html"

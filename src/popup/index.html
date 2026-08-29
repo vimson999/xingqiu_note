@@ -46,8 +46,14 @@
       <button id="btn-start-batch" class="primary-btn">开始批量</button>
       <button id="btn-stop-batch" class="danger-btn" style="display:none;">停止下载</button>
       <button id="btn-retry-failed" class="primary-btn" style="background:#ff9800;">重下失败</button>
+      <button id="btn-sync-file-history" class="primary-btn" style="background:#00897b;">同步历史</button>
       <button id="btn-export-list" class="primary-btn" style="background:#4caf50;">导出列表</button>
       <button id="btn-clear-files" class="danger-btn">清空列表</button>
+    </div>
+    <div id="file-batch-progress" class="batch-progress" hidden aria-live="polite">
+      <span id="file-batch-progress-text" class="batch-progress-text"></span>
+      <progress id="file-batch-progress-bar" max="1" value="0"></progress>
+      <span id="file-batch-progress-name" class="batch-progress-name"></span>
     </div>
 
     <div class="stats">
@@ -72,7 +78,16 @@
     <div class="audio-panel">
       <div class="settings-bar audio-download-rules">
         <label class="setting-item">下载前 <input type="number" id="audio-download-limit" value="5" min="1"> 个</label>
+        <label class="setting-item">下载量 ≥ <input type="number" id="audio-min-count" value="0" min="0"></label>
         <label class="setting-item until-field">截止到 <input type="text" id="audio-download-until" placeholder="文件名..."></label>
+        <select id="audio-sort" title="音频排序">
+          <option value="time_desc" selected>时间 ↓</option>
+          <option value="count_desc">下载量 ↓</option>
+        </select>
+      </div>
+      <div class="settings-bar audio-time-rules">
+        <label class="setting-item">上传从 <input type="datetime-local" id="audio-upload-start-time"></label>
+        <label class="setting-item">上传到 <input type="datetime-local" id="audio-upload-end-time"></label>
       </div>
       <div class="control-bar audio-control-bar">
         <button id="btn-go-audio" class="primary-btn audio-btn teal-btn">进入搜索页</button>
@@ -81,9 +96,16 @@
         <button id="btn-stop-deep-audio" class="danger-btn audio-btn" style="display:none;">停止获取</button>
         <button id="btn-batch-audio" class="primary-btn audio-btn red-btn">开始下载</button>
         <button id="btn-stop-audio" class="danger-btn audio-btn" style="display:none;">停止</button>
+        <button id="btn-retry-failed-audio" class="primary-btn audio-btn" style="background:#ff9800;">重下失败</button>
+        <button id="btn-sync-audio-history" class="primary-btn audio-btn teal-btn">同步历史</button>
         <button id="btn-export-audio" class="primary-btn audio-btn blue-btn">导出 CSV</button>
         <button id="btn-clear-audio" class="danger-btn audio-btn">清空</button>
         <button id="btn-clear-audio-history" class="danger-btn audio-btn">清除记录</button>
+      </div>
+      <div id="audio-batch-progress" class="batch-progress" hidden aria-live="polite">
+        <span id="audio-batch-progress-text" class="batch-progress-text"></span>
+        <progress id="audio-batch-progress-bar" max="1" value="0"></progress>
+        <span id="audio-batch-progress-name" class="batch-progress-name"></span>
       </div>
     </div>
     <div class="stats">
@@ -111,6 +133,21 @@
         <div class="setting-row">
           <input type="checkbox" id="check-auto-title" checked>
           <span>将文件名自动填入标题</span>
+        </div>
+      </div>
+      <div class="control-group remote-history-config">
+        <div class="group-header">
+          <label>远端下载历史</label>
+          <button id="btn-save-remote-history-config" class="primary-btn">保存配置</button>
+        </div>
+        <div class="remote-history-grid">
+          <label class="setting-item remote-endpoint">接口 <input type="url" id="remote-history-endpoint" autocomplete="off"></label>
+          <label class="setting-item remote-app-id">App ID <input type="text" id="remote-history-app-id" autocomplete="off"></label>
+          <label class="setting-item remote-secret">Secret <input type="password" id="remote-history-secret" autocomplete="new-password"></label>
+          <label class="setting-item">星球 ID <input type="text" id="remote-history-group-id" inputmode="numeric"></label>
+          <label class="setting-item">PDF Tab ID <input type="text" id="remote-history-pdf-tab-id" inputmode="numeric"></label>
+          <label class="setting-item">MP3 Tab ID <input type="text" id="remote-history-mp3-tab-id" inputmode="numeric"></label>
+          <label class="setting-item remote-days">天数 <input type="number" id="remote-history-days" min="1" max="30"></label>
         </div>
       </div>
     </div>

@@ -509,6 +509,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'BATCH_DOWNLOAD_COMPLETE') {
+    window.alert(message.payload?.message || '批量下载任务已完成。');
+    sendResponse({ success: true });
+    return true;
+  }
+
   // 音频逻辑保持一致性
   if (message.type === 'TRIGGER_AUDIO_CLICK') {
     (async () => {
@@ -600,9 +606,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             failed++;
             await appendOperationLog(`文件下载量未解析: ${fileName}`, { overlaySample });
           }
+          await closeOverlayAfterDownload();
         }
         internalLog(`深度扫描完成，更新了 ${count} 个文件的下载量`);
         await appendOperationLog(`文件下载量获取完成，更新 ${count} 条，失败 ${failed} 条`);
+        window.alert(`文件下载量获取完成：更新 ${count} 条，失败 ${failed} 条。`);
         sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("深度扫描发生异常:", err);
@@ -664,9 +672,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             failed++;
             await appendOperationLog(`音频下载量未解析: ${audioName}`, { overlaySample });
           }
+          await closeOverlayAfterDownload();
         }
         internalLog(`音频深度扫描完成，更新了 ${count} 个音频的下载量`);
         await appendOperationLog(`音频下载量获取完成，更新 ${count} 条，失败 ${failed} 条`);
+        window.alert(`音频下载量获取完成：更新 ${count} 条，失败 ${failed} 条。`);
         sendResponse({ success: true, count, failed });
       } catch (err) {
         internalLog("音频深度扫描异常:", err);
