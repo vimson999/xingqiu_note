@@ -1,5 +1,7 @@
 import { SETTINGS } from '../config/settings.js';
 import { formatBatchProgress } from '../utils/batch-progress.mjs';
+import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
+import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
 
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
@@ -43,6 +45,11 @@ function getDefaultRemoteHistoryConfig() {
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. 按钮 & 元素定义
   const btnScan = document.getElementById('btn-scan');
+  const btnImportFileResponse = document.getElementById('btn-import-file-response');
+  const fileImportPanel = document.getElementById('file-import-panel');
+  const fileImportResponse = document.getElementById('file-import-response');
+  const btnConfirmFileImport = document.getElementById('btn-confirm-file-import');
+  const btnCancelFileImport = document.getElementById('btn-cancel-file-import');
   const btnDeepScan = document.getElementById('btn-deep-scan');
   const btnStopDeep = document.getElementById('btn-stop-deep');
   const btnStartBatch = document.getElementById('btn-start-batch');
@@ -57,6 +64,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 音频 tab 按钮
   const btnGoAudio = document.getElementById('btn-go-audio');
   const btnScanAudio = document.getElementById('btn-scan-audio');
+  const btnImportAudioResponse = document.getElementById('btn-import-audio-response');
+  const audioImportPanel = document.getElementById('audio-import-panel');
+  const audioImportResponse = document.getElementById('audio-import-response');
+  const btnConfirmAudioImport = document.getElementById('btn-confirm-audio-import');
+  const btnCancelAudioImport = document.getElementById('btn-cancel-audio-import');
   const btnDeepScanAudio = document.getElementById('btn-deep-scan-audio');
   const btnStopDeepAudio = document.getElementById('btn-stop-deep-audio');
   const btnBatchAudio = document.getElementById('btn-batch-audio');
@@ -267,6 +279,111 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!response) alert('未连接到知识星球音频页面，请确认当前标签页是音频搜索页并已刷新。');
     else await reconcileAudioDownloadHistory();
     renderFromStorage();
+  };
+
+  function getAudioImportErrorMessage(error) {
+    const messages = {
+      AUDIO_IMPORT_JSON_INVALID: '导入失败：粘贴内容不是有效 JSON。',
+      AUDIO_IMPORT_RESPONSE_NOT_SUCCEEDED: '导入失败：接口响应未返回成功状态。',
+      AUDIO_IMPORT_FILES_MISSING: '导入失败：未找到 resp_data.files。',
+      AUDIO_IMPORT_NO_AUDIO_FILES: '导入失败：响应中没有可导入的音频文件。'
+    };
+    return messages[error?.message] || `导入失败：${error?.message || 'UNKNOWN_ERROR'}`;
+  }
+
+  function closeAudioImportPanel() {
+    audioImportPanel.hidden = true;
+    audioImportResponse.value = '';
+  }
+
+  btnImportAudioResponse.onclick = () => {
+    const isOpening = audioImportPanel.hidden;
+    audioImportPanel.hidden = !isOpening;
+    if (isOpening) audioImportResponse.focus();
+  };
+
+  btnCancelAudioImport.onclick = closeAudioImportPanel;
+
+  btnConfirmAudioImport.onclick = async () => {
+    const rawResponse = audioImportResponse.value.trim();
+    if (!rawResponse) {
+      alert('请先粘贴接口响应 JSON。');
+      return;
+    }
+
+    try {
+      const parsed = parseAudioSearchResponse(rawResponse);
+      if (parsed.sourceCount > 0 && parsed.items.length === 0) {
+        throw new Error('AUDIO_IMPORT_NO_AUDIO_FILES');
+      }
+      const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
+      const merged = mergeImportedAudioItems(
+        data.pendingAudio || [],
+        parsed.items,
+        data.downloadedAudioHistory || []
+      );
+      await chrome.storage.local.set({ pendingAudio: merged.items });
+      await showLog(`音频接口响应导入完成：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
+      closeAudioImportPanel();
+      await renderFromStorage();
+
+      const nextPageHint = parsed.nextIndex === null ? '' : ` 下一页 index：${parsed.nextIndex}。`;
+      const skippedHint = parsed.skippedCount > 0 ? ` 跳过 ${parsed.skippedCount} 条非音频记录。` : '';
+      alert(`音频接口响应已导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。${nextPageHint}${skippedHint}`);
+    } catch (error) {
+      alert(getAudioImportErrorMessage(error));
+    }
+  };
+
+  function getFileImportErrorMessage(error) {
+    const messages = {
+      FILE_IMPORT_JSON_INVALID: '导入失败：粘贴内容不是有效 JSON。',
+      FILE_IMPORT_RESPONSE_NOT_SUCCEEDED: '导入失败：接口响应未返回成功状态。',
+      FILE_IMPORT_TOPICS_MISSING: '导入失败：未找到 resp_data.topics。',
+      FILE_IMPORT_NO_PDF_FILES: '导入失败：响应中没有可导入的 PDF 文件。'
+    };
+    return messages[error?.message] || `导入失败：${error?.message || 'UNKNOWN_ERROR'}`;
+  }
+
+  function closeFileImportPanel() {
+    fileImportPanel.hidden = true;
+    fileImportResponse.value = '';
+  }
+
+  btnImportFileResponse.onclick = () => {
+    const isOpening = fileImportPanel.hidden;
+    fileImportPanel.hidden = !isOpening;
+    if (isOpening) fileImportResponse.focus();
+  };
+
+  btnCancelFileImport.onclick = closeFileImportPanel;
+
+  btnConfirmFileImport.onclick = async () => {
+    const rawResponse = fileImportResponse.value.trim();
+    if (!rawResponse) {
+      alert('请先粘贴接口响应 JSON。');
+      return;
+    }
+
+    try {
+      const parsed = parseFileSearchResponse(rawResponse);
+      if (parsed.items.length === 0) throw new Error('FILE_IMPORT_NO_PDF_FILES');
+      const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
+      const merged = mergeImportedFileItems(
+        data.pendingFiles || [],
+        parsed.items,
+        data.downloadedHistory || []
+      );
+      await chrome.storage.local.set({ pendingFiles: merged.items });
+      await showLog(`PDF 接口响应导入完成：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
+      closeFileImportPanel();
+      await renderFromStorage();
+
+      const skippedHint = parsed.skippedCount > 0 ? ` 跳过 ${parsed.skippedCount} 条非 PDF 记录。` : '';
+      alert(`PDF 接口响应已导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。${skippedHint}`);
+    } catch (error) {
+      alert(getFileImportErrorMessage(error));
+    }
   };
 
   btnDeepScanAudio.onclick = async () => {
