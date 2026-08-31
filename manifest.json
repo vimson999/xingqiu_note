@@ -25,6 +25,21 @@
       "matches": [
         "https://*.zsxq.com/*"
       ],
+      "js": ["src/content/audio-network-capture-bridge.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://*.zsxq.com/*"
+      ],
+      "js": ["src/content/audio-network-capture-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://*.zsxq.com/*"
+      ],
       "js": ["src/content/index.js"],
       "css": ["src/content/index.css"],
       "run_at": "document_idle"

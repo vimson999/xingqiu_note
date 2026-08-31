@@ -15,6 +15,9 @@ import {
 } from '../utils/remote-history.mjs';
 import { createBatchProgress, updateBatchProgress } from '../utils/batch-progress.mjs';
 import { downloadNamesMatch, findExactDownloadMatches } from '../utils/download-match.mjs';
+import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
+import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
+import { isAudioSearchRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
 
 let isBatchRunning = false;
 let stopBatchRequested = false;
@@ -25,6 +28,24 @@ const STALE_PROCESSING_MS = 2 * 60 * 1000;
 const BATCH_PROGRESS_STORAGE_KEY = 'batchDownloadProgress';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'AUTO_IMPORT_AUDIO_RESPONSE') {
+    automaticallyImportAudioResponse(message.payload)
+      .then(result => sendResponse?.(result))
+      .catch(async (err) => {
+        await addLog('WARN', `音频搜索接口自动导入失败: ${err.message}`);
+        sendResponse?.({ success: false, error: err.message });
+      });
+    return true;
+  }
+  if (message.type === 'AUTO_IMPORT_FILE_RESPONSE') {
+    automaticallyImportFileResponse(message.payload)
+      .then(result => sendResponse?.(result))
+      .catch(async (err) => {
+        await addLog('WARN', `PDF 话题接口自动导入失败: ${err.message}`);
+        sendResponse?.({ success: false, error: err.message });
+      });
+    return true;
+  }
   if (message.type === 'START_BATCH_DOWNLOAD') {
     if (isBatchRunning) {
       addLog('WARN', '已有下载任务在运行中。');
@@ -99,6 +120,70 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+async function automaticallyImportAudioResponse(payload = {}) {
+  const sourceUrl = typeof payload.sourceUrl === 'string' ? payload.sourceUrl : '';
+  const rawResponse = typeof payload.rawResponse === 'string' ? payload.rawResponse : '';
+  if (!isAudioSearchRequest(sourceUrl)) {
+    return { success: false, error: 'AUDIO_CAPTURE_SOURCE_INVALID' };
+  }
+
+  const parsed = parseAudioSearchResponse(rawResponse);
+  if (parsed.sourceCount > 0 && parsed.items.length === 0) {
+    return { success: false, error: 'AUDIO_IMPORT_NO_AUDIO_FILES' };
+  }
+
+  const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
+  const merged = mergeImportedAudioItems(
+    data.pendingAudio || [],
+    parsed.items,
+    data.downloadedAudioHistory || []
+  );
+  await chrome.storage.local.set({ pendingAudio: merged.items });
+  if (merged.addedCount > 0 || merged.updatedCount > 0) {
+    await addLog('INFO', `音频搜索接口自动导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
+  }
+  return {
+    success: true,
+    addedCount: merged.addedCount,
+    updatedCount: merged.updatedCount,
+    sourceCount: parsed.sourceCount,
+    skippedCount: parsed.skippedCount,
+    nextIndex: parsed.nextIndex
+  };
+}
+
+async function automaticallyImportFileResponse(payload = {}) {
+  const sourceUrl = typeof payload.sourceUrl === 'string' ? payload.sourceUrl : '';
+  const rawResponse = typeof payload.rawResponse === 'string' ? payload.rawResponse : '';
+  if (!isFileTopicRequest(sourceUrl)) {
+    return { success: false, error: 'FILE_CAPTURE_SOURCE_INVALID' };
+  }
+
+  const parsed = parseFileSearchResponse(rawResponse);
+  if (parsed.sourceFileCount > 0 && parsed.items.length === 0) {
+    return { success: false, error: 'FILE_IMPORT_NO_PDF_FILES' };
+  }
+
+  const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
+  const merged = mergeImportedFileItems(
+    data.pendingFiles || [],
+    parsed.items,
+    data.downloadedHistory || []
+  );
+  await chrome.storage.local.set({ pendingFiles: merged.items });
+  if (merged.addedCount > 0 || merged.updatedCount > 0) {
+    await addLog('INFO', `PDF 话题接口自动导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
+  }
+  return {
+    success: true,
+    addedCount: merged.addedCount,
+    updatedCount: merged.updatedCount,
+    sourceTopicCount: parsed.sourceTopicCount,
+    sourceFileCount: parsed.sourceFileCount,
+    skippedCount: parsed.skippedCount
+  };
+}
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FILE_BATCH_ALARM) runNextBatchDownload();
