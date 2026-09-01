@@ -3,6 +3,25 @@
   const EVENT_TYPE = 'SEARCH_RESPONSE';
   const MAX_RESPONSE_LENGTH = 2_000_000;
 
+  function isContextInvalidated(error) {
+    return String(error?.message || error).includes('Extension context invalidated');
+  }
+
+  function forwardCapturedResponse(message) {
+    try {
+      chrome.runtime.sendMessage(message, () => {
+        try {
+          void chrome.runtime.lastError;
+        } catch (error) {
+          if (!isContextInvalidated(error)) throw error;
+        }
+      });
+    } catch (error) {
+      // A page can retain this old script after the extension has been reloaded.
+      if (!isContextInvalidated(error)) throw error;
+    }
+  }
+
   function getCaptureKind(rawUrl) {
     try {
       const url = new URL(rawUrl);
@@ -25,14 +44,12 @@
     if (!captureKind || data.captureKind !== captureKind) return;
     if (typeof data.rawResponse !== 'string' || data.rawResponse.length > MAX_RESPONSE_LENGTH) return;
 
-    chrome.runtime.sendMessage({
+    forwardCapturedResponse({
       type: captureKind === 'audio' ? 'AUTO_IMPORT_AUDIO_RESPONSE' : 'AUTO_IMPORT_FILE_RESPONSE',
       payload: {
         sourceUrl: data.sourceUrl,
         rawResponse: data.rawResponse
       }
-    }, () => {
-      void chrome.runtime.lastError;
     });
   });
 })();

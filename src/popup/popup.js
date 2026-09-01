@@ -1,7 +1,8 @@
-import { SETTINGS } from '../config/settings.js';
+import { resolveRemoteHistoryEndpoint, SETTINGS } from '../config/settings.js';
 import { formatBatchProgress } from '../utils/batch-progress.mjs';
 import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
+import { buildListJsonExport } from '../utils/list-json-export.mjs';
 
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnStopBatch = document.getElementById('btn-stop-batch');
   const btnRetryFailed = document.getElementById('btn-retry-failed');
   const btnExportList = document.getElementById('btn-export-list');
+  const btnExportListJson = document.getElementById('btn-export-list-json');
   const btnClearFiles = document.getElementById('btn-clear-files');
   const btnSyncFileHistory = document.getElementById('btn-sync-file-history');
   const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -76,6 +78,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnRetryFailedAudio = document.getElementById('btn-retry-failed-audio');
   const audioSort = document.getElementById('audio-sort');
   const btnExportAudio = document.getElementById('btn-export-audio');
+  const btnExportAudioJson = document.getElementById('btn-export-audio-json');
   const btnClearAudio = document.getElementById('btn-clear-audio');
   const btnClearAudioHistory = document.getElementById('btn-clear-audio-history');
   const btnSyncAudioHistory = document.getElementById('btn-sync-audio-history');
@@ -161,11 +164,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     await chrome.storage.local.set({ logs });
   }
 
+  function downloadJsonList(payload, filename) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+
+  async function exportListJson(kind) {
+    const isAudio = kind === 'audio';
+    const itemsKey = isAudio ? 'pendingAudio' : 'pendingFiles';
+    const historyKey = isAudio ? 'downloadedAudioHistory' : 'downloadedHistory';
+    const label = isAudio ? '音频' : 'PDF';
+    const data = await chrome.storage.local.get([itemsKey, historyKey]);
+    const items = data[itemsKey] || [];
+    if (items.length === 0) {
+      alert('列表为空，无可导出数据');
+      return;
+    }
+
+    const payload = buildListJsonExport({
+      kind,
+      items,
+      downloadedNames: data[historyKey] || []
+    });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadJsonList(payload, `zsxq_${kind}_list_${timestamp}.json`);
+    await showLog(`${label} 列表 JSON 已导出：${items.length} 条。`);
+  }
+
   function getRemoteHistoryConfigFromForm() {
     const defaults = getDefaultRemoteHistoryConfig();
     const days = Number.parseInt(document.getElementById('remote-history-days').value, 10);
     return {
-      endpoint: document.getElementById('remote-history-endpoint').value.trim() || defaults.endpoint,
+      endpoint: resolveRemoteHistoryEndpoint(document.getElementById('remote-history-endpoint').value),
       appId: document.getElementById('remote-history-app-id').value.trim(),
       appSecret: document.getElementById('remote-history-secret').value.trim(),
       groupId: document.getElementById('remote-history-group-id').value.trim() || defaults.groupId,
@@ -178,7 +216,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function fillRemoteHistoryConfig(rawConfig = {}) {
     const defaults = getDefaultRemoteHistoryConfig();
     const config = {
-      endpoint: rawConfig.endpoint || defaults.endpoint,
+      endpoint: resolveRemoteHistoryEndpoint(rawConfig.endpoint),
       appId: rawConfig.appId || defaults.appId,
       appSecret: rawConfig.appSecret || defaults.appSecret,
       groupId: rawConfig.groupId || defaults.groupId,
@@ -522,6 +560,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.removeChild(link);
   };
 
+  btnExportAudioJson.onclick = () => exportListJson('audio');
+
   btnClearAudio.onclick = async () => {
     if (confirm('确定清空音频列表？下载记录将保留，用于避免重复下载。')) {
       await chrome.storage.local.set({ pendingAudio: [] });
@@ -668,6 +708,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  btnExportListJson.onclick = () => exportListJson('pdf');
 
   // 清空 & 导出管理
   btnClearFiles.onclick = async () => {

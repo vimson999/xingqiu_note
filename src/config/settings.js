@@ -12,7 +12,7 @@ export const SETTINGS = {
 
   // 远端下载历史同步（凭证仅保存于扩展本地存储，不写入源码）
   REMOTE_HISTORY: {
-    ENDPOINT: 'https://ji448ziqobpp.ngrok.xiaomiqiu123.top/api/v1/zsxq/browser-import/history',
+    ENDPOINT: 'https://xiaoshanqing.tech/api/v1/zsxq/browser-import/history',
     REQUEST_PATH: '/api/v1/zsxq/browser-import/history',
     DEFAULT_GROUP_ID: '28888112822211',
     DEFAULT_PDF_TAB_ID: '51184248544214',
@@ -41,3 +41,15 @@ export const SETTINGS = {
     MAX_PERSISTED_ERRORS: 100
   }
 };
+
+const LEGACY_REMOTE_HISTORY_ENDPOINTS = new Set([
+  'https://ji448ziqobpp.ngrok.xiaomiqiu123.top/api/v1/zsxq/browser-import/history'
+]);
+
+export function resolveRemoteHistoryEndpoint(value) {
+  const endpoint = String(value || '').trim().replace(/\/+$/, '');
+  if (!endpoint || LEGACY_REMOTE_HISTORY_ENDPOINTS.has(endpoint)) {
+    return SETTINGS.REMOTE_HISTORY.ENDPOINT;
+  }
+  return endpoint;
+}

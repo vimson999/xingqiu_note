@@ -3,7 +3,7 @@
  * 修复：解决任务回信丢失导致的卡死问题，增强 Promise 超时鲁棒性。
  */
 
-import { SETTINGS } from '../config/settings.js';
+import { resolveRemoteHistoryEndpoint, SETTINGS } from '../config/settings.js';
 import {
   applyRemoteHistory,
   buildRemoteHistorySigningText,
@@ -221,7 +221,7 @@ async function getRemoteHistoryConfig(rawConfig = {}) {
   const privateCredentials = await loadPrivateRemoteHistoryCredentials();
   const parsedDays = Number.parseInt(rawConfig.days, 10);
   return {
-    endpoint: String(rawConfig.endpoint || SETTINGS.REMOTE_HISTORY.ENDPOINT).trim().replace(/\/+$/, ''),
+    endpoint: resolveRemoteHistoryEndpoint(rawConfig.endpoint),
     appId: String(rawConfig.appId || privateCredentials.appId || '').trim(),
     appSecret: String(rawConfig.appSecret || privateCredentials.appSecret || '').trim(),
     groupId: String(rawConfig.groupId || SETTINGS.REMOTE_HISTORY.DEFAULT_GROUP_ID).trim(),

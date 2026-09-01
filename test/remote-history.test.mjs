@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { SETTINGS, resolveRemoteHistoryEndpoint } from '../src/config/settings.js';
 import {
   applyRemoteHistory,
   buildRemoteHistorySigningText,
@@ -110,4 +111,16 @@ test('keeps previously trusted records when an incremental response has no files
   }];
 
   assert.deepEqual(mergeRemoteHistoryRecords(existing, []), existing);
+});
+
+test('migrates a previously saved default endpoint without changing custom endpoints', () => {
+  const currentEndpoint = SETTINGS.REMOTE_HISTORY.ENDPOINT;
+  const legacyEndpoint = 'https://ji448ziqobpp.ngrok.xiaomiqiu123.top/api/v1/zsxq/browser-import/history';
+
+  assert.equal(resolveRemoteHistoryEndpoint(currentEndpoint), currentEndpoint);
+  assert.equal(resolveRemoteHistoryEndpoint(`${legacyEndpoint}/`), currentEndpoint);
+  assert.equal(
+    resolveRemoteHistoryEndpoint('https://custom.example/history'),
+    'https://custom.example/history'
+  );
 });
