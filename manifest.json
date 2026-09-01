@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "https://*.zsxq.com/*",
-    "https://ji448ziqobpp.ngrok.xiaomiqiu123.top/*"
+    "https://ji448ziqobpp.ngrok.xiaomiqiu123.top/*",
+    "https://xiaoshanqing.tech/*"
   ],
   "action": {
     "default_popup": "src/popup/index.html"
