@@ -11,6 +11,8 @@
   ],
   "host_permissions": [
     "https://*.zsxq.com/*",
+    "https://doubao.com/*",
+    "https://www.doubao.com/*",
     "https://ji448ziqobpp.ngrok.xiaomiqiu123.top/*",
     "https://xiaoshanqing.tech/*"
   ],
@@ -44,12 +46,27 @@
       "js": ["src/content/index.js"],
       "css": ["src/content/index.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://doubao.com/*",
+        "https://www.doubao.com/*"
+      ],
+      "js": ["src/doubao/content.js"],
+      "run_at": "document_start"
     }
   ],
   "web_accessible_resources": [
     {
       "resources": ["src/config/*", "src/utils/*", "src/core/*"],
       "matches": ["https://*.zsxq.com/*"]
+    },
+    {
+      "resources": ["src/doubao/injected.js"],
+      "matches": [
+        "https://doubao.com/*",
+        "https://www.doubao.com/*"
+      ]
     }
   ]
 }

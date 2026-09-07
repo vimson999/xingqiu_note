@@ -13,6 +13,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="files">文件列表</div>
     <div class="tab" data-tab="audio">音频采集</div>
+    <div class="tab" data-tab="doubao">豆包朗读</div>
     <div class="tab" data-tab="upload">上传辅助</div>
     <div class="tab" data-tab="logs">操作日志</div>
   </div>
@@ -137,6 +138,26 @@
   </div>    <ul id="audio-list" class="list">
       <li class="empty-hint">进入音频搜索页后点击“扫描”</li>
     </ul>
+  </div>
+
+  <div id="tab-doubao" class="tab-content">
+    <div class="doubao-panel">
+      <div class="control-bar doubao-control-bar">
+        <button id="btn-open-doubao" class="primary-btn">打开豆包</button>
+        <button id="btn-doubao-status" class="primary-btn">查询状态</button>
+        <button id="btn-doubao-download" class="primary-btn" style="background:#4caf50;">下载 WAV</button>
+        <button id="btn-doubao-clear" class="danger-btn">清空缓存</button>
+      </div>
+      <div class="stats doubao-stats">
+        <span>片段: <b id="doubao-chunks">0</b></span>
+        <span>时长: <b id="doubao-seconds">0.0s</b></span>
+        <span>采样率: <b id="doubao-sample-rate">24000Hz</b></span>
+      </div>
+      <div class="doubao-note">
+        <div>打开豆包页面后点击朗读，播放完成后下载 WAV。</div>
+        <div>每次新朗读前先清空缓存。</div>
+      </div>
+    </div>
   </div>
 
   <div id="tab-upload" class="tab-content">

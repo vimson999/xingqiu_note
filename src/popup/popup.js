@@ -83,6 +83,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnClearAudioHistory = document.getElementById('btn-clear-audio-history');
   const btnSyncAudioHistory = document.getElementById('btn-sync-audio-history');
   const audioListEl = document.getElementById('audio-list');
+
+  // 豆包朗读 tab 按钮
+  const btnOpenDoubao = document.getElementById('btn-open-doubao');
+  const btnDoubaoStatus = document.getElementById('btn-doubao-status');
+  const btnDoubaoDownload = document.getElementById('btn-doubao-download');
+  const btnDoubaoClear = document.getElementById('btn-doubao-clear');
+  const doubaoChunksEl = document.getElementById('doubao-chunks');
+  const doubaoSecondsEl = document.getElementById('doubao-seconds');
+  const doubaoSampleRateEl = document.getElementById('doubao-sample-rate');
   
   const selectInst = document.getElementById('select-institution');
   const selectSort = document.getElementById('select-sort');
@@ -124,6 +133,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.querySelectorAll('.tab, .tab-content').forEach(el => el.classList.remove('active'));
       tab.classList.add('active');
       document.getElementById(`tab-${tab.dataset.tab}`).classList.add('active');
+      if (tab.dataset.tab === 'doubao') refreshDoubaoStatus(false);
     };
   });
 
@@ -147,6 +157,19 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
         resolve(response || { success: false, error: 'NO_RESPONSE' });
+      });
+    });
+  }
+
+  async function sendDoubaoCommand(command) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const isDoubaoPage = tab?.url?.startsWith('https://doubao.com/')
+      || tab?.url?.startsWith('https://www.doubao.com/');
+    if (!tab?.id || !isDoubaoPage) return null;
+    return new Promise((resolve) => {
+      chrome.tabs.sendMessage(tab.id, { type: 'DOUBAO_AUDIO_COMMAND', command }, (response) => {
+        if (chrome.runtime.lastError) resolve(null);
+        else resolve(response);
       });
     });
   }
@@ -295,7 +318,49 @@ document.addEventListener('DOMContentLoaded', async () => {
       && uploadDate.getDate() === today.getDate();
   }
 
+  function renderDoubaoStatus(status) {
+    if (!status) return;
+    doubaoChunksEl.innerText = status.chunks || 0;
+    doubaoSecondsEl.innerText = `${Number(status.seconds || 0).toFixed(1)}s`;
+    doubaoSampleRateEl.innerText = `${status.sampleRate || 24000}Hz`;
+  }
+
+  async function refreshDoubaoStatus(showAlert = true) {
+    const status = await sendDoubaoCommand('GET_STATUS');
+    if (!status) {
+      if (showAlert) alert('请先切换到豆包页面，并刷新页面让插件注入。');
+      return null;
+    }
+    renderDoubaoStatus(status);
+    return status;
+  }
+
   // --- 5. 核心操作绑定 ---
+
+  btnOpenDoubao.onclick = () => {
+    chrome.tabs.create({ url: 'https://doubao.com/' });
+  };
+
+  btnDoubaoStatus.onclick = () => refreshDoubaoStatus(true);
+
+  btnDoubaoDownload.onclick = async () => {
+    const res = await sendDoubaoCommand('DOWNLOAD');
+    if (!res) {
+      alert('请先切换到豆包页面，并刷新页面让插件注入。');
+      return;
+    }
+    renderDoubaoStatus(res);
+    if (res.error === 'NO_AUDIO') alert('还没有捕获到音频。请先在豆包页面点击朗读。');
+  };
+
+  btnDoubaoClear.onclick = async () => {
+    const res = await sendDoubaoCommand('CLEAR');
+    if (!res) {
+      alert('请先切换到豆包页面，并刷新页面让插件注入。');
+      return;
+    }
+    renderDoubaoStatus(res);
+  };
 
   // 音频采集
   btnGoAudio.onclick = () => {

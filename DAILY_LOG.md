@@ -103,6 +103,12 @@
 - **调整**: 音频采集 tab 的下载操作区改为文件列表同款结构，上方条件栏、下方按钮栏，统一输入和按钮样式。
 - **补充**: 音频条件栏对齐文件列表的列宽、输入高度、边框和间距规则。
 
+### 新增 O：豆包朗读音频下载
+- **功能**: Popup 新增“豆包朗读”tab，支持打开豆包、查询捕获状态、下载 WAV、清空缓存。
+- **实现**: 新增豆包页面 content script，在 `document_start` 注入页面主环境脚本，劫持 `MessagePort.prototype.postMessage` 捕获 `dataIn` Float32 PCM，并按 24000Hz 封装 WAV。
+- **约束**: 不读取 Cookie、不处理 WebSocket、不模拟豆包接口；仅捕获浏览器本地朗读播放时传入 AudioWorklet 的音频数据。
+- **修正**: 豆包域名同时兼容 `doubao.com` 和 `www.doubao.com`，避免无 `www` 页面无法注入。
+
 ## 4. 提交记录
 - `eb0963e` - Stabilize batch file downloads
 - `24e933e` - Restore audio scan and limit batch downloads
