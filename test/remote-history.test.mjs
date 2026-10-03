@@ -36,6 +36,22 @@ test('normalizes Chrome duplicate suffixes before matching filenames', () => {
   );
 });
 
+test('missing or invalid workflow submission flags remain unknown', () => {
+  for (const workflow of [{}, [], { submitted: null }, { submitted: 'false' }]) {
+    assert.equal(getMp3VideoWorkflowDisplay(workflow).state, 'unavailable');
+  }
+});
+
+test('missing remote download counts preserve the local count while zero is authoritative', () => {
+  for (const count of [null, undefined, '', ' ', false, [], -1, 'invalid', 0, '0', '16']) {
+    const result = applyRemoteHistory([{ name: 'audio.mp3', downloadCount: 25 }], [{
+      filename: 'audio.mp3', latest_download_count: count, success: true
+    }]);
+    const expected = count === 0 || count === '0' ? 0 : count === '16' ? 16 : 25;
+    assert.equal(result.items[0].downloadCount, expected, `count=${JSON.stringify(count)}`);
+  }
+});
+
 test('builds the server signing text in the documented order', () => {
   assert.equal(
     buildRemoteHistorySigningText({

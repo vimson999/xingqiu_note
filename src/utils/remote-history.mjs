@@ -1,15 +1,16 @@
 const CHROME_DUPLICATE_SUFFIX = /\s*\(\d+\)(?=\.[^.]+$)/;
 
 function toNumber(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
 export function getMp3VideoWorkflowDisplay(workflow) {
-  if (!workflow || typeof workflow !== 'object') {
+  if (!workflow || typeof workflow !== 'object' || typeof workflow.submitted !== 'boolean') {
     return { label: '暂无状态', state: 'unavailable' };
   }
-  if (workflow.submitted !== true) {
+  if (workflow.submitted === false) {
     return { label: '未投递', state: 'not-submitted' };
   }
   if (workflow.completed === true) {

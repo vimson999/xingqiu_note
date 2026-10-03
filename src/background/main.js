@@ -6,19 +6,18 @@
 import { resolveRemoteHistoryEndpoint, SETTINGS } from '../config/settings.js';
 import {
   applyRemoteHistory,
-  buildRemoteHistorySigningText,
   getRemoteHistoryNames,
   getTrustedRemoteFiles,
-  hmacSha256Hex,
   isValidRemoteHistoryEndpoint,
-  mergeRemoteHistoryRecords,
-  sha256Hex
+  mergeRemoteHistoryRecords
 } from '../utils/remote-history.mjs';
+import { requestRemoteHistory } from '../utils/remote-history-request.mjs';
 import { createBatchProgress, updateBatchProgress } from '../utils/batch-progress.mjs';
 import { downloadNamesMatch, findExactDownloadMatches } from '../utils/download-match.mjs';
 import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
 import { isAudioImportRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
+import { selectBatchTasks } from '../utils/download-selection.mjs';
 
 let isBatchRunning = false;
 let stopBatchRequested = false;
@@ -53,9 +52,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse?.({ success: false, error: 'BATCH_RUNNING' });
       return true;
     }
-    const { limit, minCount, filterNames, uploadStartMs, uploadEndMs } = message.payload || {};
+    const { limit, minCount, filterNames, uploadStartMs, uploadEndMs, sort } = message.payload || {};
     stopBatchRequested = false;
-    startBatchDownload(limit, minCount, filterNames, uploadStartMs, uploadEndMs)
+    startBatchDownload(limit, minCount, filterNames, uploadStartMs, uploadEndMs, { sort })
       .then(() => sendResponse?.({ success: true }))
       .catch(err => {
         addLog('ERROR', `启动批量任务失败: ${err.message}`);
@@ -69,9 +68,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse?.({ success: false, error: 'BATCH_RUNNING' });
       return true;
     }
-    const { filterNames, minCount, uploadStartMs, uploadEndMs } = message.payload || {};
+    const { filterNames, minCount, uploadStartMs, uploadEndMs, sort } = message.payload || {};
     stopBatchRequested = false;
     startBatchDownload(0, minCount, filterNames, uploadStartMs, uploadEndMs, {
+      sort,
       statuses: ['failed'],
       label: '重新下载失败文件'
     })
@@ -190,25 +190,6 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === FILE_BATCH_ALARM) runNextBatchDownload();
 });
 
-function parseUploadTimeValue(value) {
-  if (!value || value === '未知' || value === '-') return null;
-  const normalized = value.trim().replace(/\//g, '-');
-  const withYear = /^\d{2}-\d{2}/.test(normalized)
-    ? `${new Date().getFullYear()}-${normalized}`
-    : normalized;
-  const date = new Date(withYear.replace(' ', 'T'));
-  const time = date.getTime();
-  return Number.isNaN(time) ? null : time;
-}
-
-function isWithinUploadRange(file, startMs, endMs) {
-  const uploadMs = parseUploadTimeValue(file.uploadTime);
-  if (!uploadMs) return false;
-  if (startMs && uploadMs < startMs) return false;
-  if (endMs && uploadMs > endMs) return false;
-  return true;
-}
-
 async function loadPrivateRemoteHistoryCredentials() {
   try {
     const privateModule = await import('../private/remote-history-credentials.js');
@@ -266,13 +247,6 @@ function getRemoteHistoryErrorMessage(error) {
   return messages[error] || error;
 }
 
-function getRemoteResponseError(responseBody) {
-  if (typeof responseBody?.error === 'string') return responseBody.error;
-  if (typeof responseBody?.message === 'string') return responseBody.message;
-  if (Array.isArray(responseBody?.errors) && typeof responseBody.errors[0] === 'string') return responseBody.errors[0];
-  return 'REMOTE_HISTORY_REQUEST_FAILED';
-}
-
 async function syncRemoteHistory(kind) {
   if (!['pdf', 'mp3'].includes(kind)) return { success: false, error: 'REMOTE_HISTORY_KIND_INVALID' };
 
@@ -282,50 +256,12 @@ async function syncRemoteHistory(kind) {
   const configError = getRemoteHistoryConfigError(config, tabId);
   if (configError) return { success: false, error: configError, message: getRemoteHistoryErrorMessage(configError) };
 
-  const endpoint = new URL(config.endpoint);
-  const requestPath = endpoint.pathname || SETTINGS.REMOTE_HISTORY.REQUEST_PATH;
-  const requestBody = JSON.stringify({
-    kind,
-    days: config.days,
-    group_id: config.groupId,
-    tab_id: tabId
-  });
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const bodySha256 = await sha256Hex(requestBody);
-  const signingText = buildRemoteHistorySigningText({
-    appId: config.appId,
-    timestamp,
-    method: 'POST',
-    path: requestPath,
-    bodySha256
-  });
-  const signature = await hmacSha256Hex(config.appSecret, signingText);
-
-  let response;
-  try {
-    response = await fetch(endpoint.href, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-App-Id': config.appId,
-        'X-Timestamp': timestamp,
-        'X-Signature': signature
-      },
-      body: requestBody
-    });
-  } catch (err) {
-    return { success: false, error: `REMOTE_HISTORY_NETWORK_ERROR: ${err.message}` };
+  const result = await requestRemoteHistory(config, kind);
+  if (!result.success) {
+    await addLog('ERROR', result.message);
+    return result;
   }
-
-  let responseBody;
-  try {
-    responseBody = await response.json();
-  } catch {
-    return { success: false, error: 'REMOTE_HISTORY_INVALID_RESPONSE', message: getRemoteHistoryErrorMessage('REMOTE_HISTORY_INVALID_RESPONSE') };
-  }
-
-  if (!response.ok) return { success: false, error: `REMOTE_HISTORY_HTTP_${response.status}` };
-  if (responseBody?.success !== true) return { success: false, error: getRemoteResponseError(responseBody) };
+  const responseBody = result.body;
   if (!responseBody.data || responseBody.data.complete !== true) {
     await addLog('WARN', `${kind.toUpperCase()} 远端历史数据不完整，未更新本地去重记录。`);
     return { success: false, error: 'HISTORY_INCOMPLETE', message: getRemoteHistoryErrorMessage('HISTORY_INCOMPLETE') };
@@ -425,12 +361,10 @@ async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = 
   const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
   const pendingFiles = resetStaleProcessing(data.pendingFiles || []);
   const downloadedHistory = data.downloadedHistory || [];
-  const statuses = options.statuses || ['pending'];
-  let tasks = pendingFiles.filter(f => statuses.includes(f.status) && !downloadedHistory.includes(f.name));
-  if (filterNames?.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
-  if (uploadStartMs || uploadEndMs) tasks = tasks.filter(t => isWithinUploadRange(t, uploadStartMs, uploadEndMs));
-  if (minCount > 0) tasks = tasks.filter(t => (t.downloadCount || 0) >= minCount);
-  if (limit > 0) tasks = tasks.slice(0, limit);
+  const tasks = selectBatchTasks(pendingFiles, {
+    statuses: options.statuses, downloadedNames: downloadedHistory, filterNames,
+    minCount, uploadStartMs, uploadEndMs, limit, sort: options.sort
+  });
 
   if (tasks.length === 0) {
     addLog('WARN', options.label ? `${options.label}：无可执行文件。` : '无待下载文件。');
@@ -793,7 +727,7 @@ async function reconcileAudioDownloadHistory({ writeLog = true } = {}) {
   return { matchedCount: matches.size };
 }
 
-async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs = null, uploadEndMs = null, filterNames = [], retryFailed = false, sort = 'time_desc' } = {}) {
+async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs = null, uploadEndMs = null, filterNames, retryFailed = false, sort = 'time_desc' } = {}) {
   isBatchRunning = true;
   const [targetTab] = await chrome.tabs.query({ active: true, currentWindow: true });
   try {
@@ -803,17 +737,10 @@ async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs 
   }
   const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
   const downloadedAudioHistory = data.downloadedAudioHistory || [];
-  let tasks = (data.pendingAudio || []).filter(a => (
-    (retryFailed ? a.status === 'failed' : a.status === 'pending')
-    && !downloadedAudioHistory.includes(a.name)
-    && (minCount <= 0 || (a.downloadCount || 0) >= minCount)
-    && isWithinUploadRange(a, uploadStartMs, uploadEndMs)
-  ));
-  if (filterNames.length > 0) tasks = tasks.filter(t => filterNames.includes(t.name));
-  tasks.sort((a, b) => sort === 'count_desc'
-    ? (b.downloadCount || 0) - (a.downloadCount || 0)
-    : (b.uploadTime || '').localeCompare(a.uploadTime || ''));
-  if (limit > 0) tasks = tasks.slice(0, limit);
+  const tasks = selectBatchTasks(data.pendingAudio || [], {
+    statuses: retryFailed ? ['failed'] : ['pending'], downloadedNames: downloadedAudioHistory,
+    filterNames, minCount, uploadStartMs, uploadEndMs, sort, limit
+  });
   if (tasks.length === 0) {
     addLog('WARN', '无待下载音频。');
     isBatchRunning = false;
@@ -841,7 +768,7 @@ async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs 
     });
     await saveBatchProgress(progress);
 
-    if (await executeAudioDownloadTask(tasks[i], i + 1, tasks.length)) successCount++;
+    if (await executeAudioDownloadTask(tasks[i], i + 1, tasks.length, targetTab?.id ?? null)) successCount++;
     else failedCount++;
     processedCount = i + 1;
     progress = updateBatchProgress(progress, {
@@ -869,11 +796,13 @@ async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs 
   await chrome.storage.local.set({ isDownloading: false });
 }
 
-async function executeAudioDownloadTask(task, current, total) {
+async function executeAudioDownloadTask(task, current, total, targetTabId) {
   const startedAt = Date.now();
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab) throw new Error('NO_TAB');
+    const tab = targetTabId === undefined
+      ? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+      : { id: targetTabId };
+    if (!tab?.id) throw new Error('NO_TAB');
     await updateAudioStatus(task.name, 'processing', { processingStartedAt: startedAt });
     const downloadWatch = waitForDownloadStarted(
       task.name,

@@ -4,6 +4,8 @@ import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audi
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
 import { buildListJsonExport } from '../utils/list-json-export.mjs';
 import { getMp3VideoWorkflowDisplay } from '../utils/remote-history.mjs';
+import { compareDownloadItems, isWithinUploadRange, parseUploadTimeValue } from '../utils/download-selection.mjs';
+import { escapeHtml } from '../utils/html.mjs';
 
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
@@ -283,30 +285,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function parseUploadTimeValue(value) {
-    if (!value || value === '未知' || value === '-') return null;
-    const normalized = value.trim().replace(/\//g, '-');
-    const withYear = /^\d{2}-\d{2}/.test(normalized)
-      ? `${new Date().getFullYear()}-${normalized}`
-      : normalized;
-    const date = new Date(withYear.replace(' ', 'T'));
-    const time = date.getTime();
-    return Number.isNaN(time) ? null : time;
-  }
-
   function getDateTimeInputMs(id) {
     const value = document.getElementById(id)?.value;
     if (!value) return null;
     const time = new Date(value).getTime();
     return Number.isNaN(time) ? null : time;
-  }
-
-  function isWithinUploadRange(file, startMs, endMs) {
-    const uploadMs = parseUploadTimeValue(file.uploadTime);
-    if (!uploadMs) return false;
-    if (startMs && uploadMs < startMs) return false;
-    if (endMs && uploadMs > endMs) return false;
-    return true;
   }
 
   function isUploadedToday(file) {
@@ -524,9 +507,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       ));
       
       // 排序 logic 与渲染保持一致
-      audioItems.sort((a, b) => audioSort.value === 'count_desc'
-        ? (b.downloadCount || 0) - (a.downloadCount || 0)
-        : (b.uploadTime || '').localeCompare(a.uploadTime || ''));
+      audioItems.sort((a, b) => compareDownloadItems(a, b, audioSort.value));
 
       let audioToDownload = [];
       const pendingItems = audioItems.filter(a => a.status === 'pending');
@@ -548,6 +529,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       } else {
         audioToDownload = pendingItems.slice(0, limit);
+      }
+
+      if (audioToDownload.length === 0) {
+        alert('当前筛选条件下没有待下载音频。');
+        return;
       }
 
       chrome.runtime.sendMessage({
@@ -708,6 +694,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         limit,
         minCount,
         filterNames: filesToDownload.map(f => f.name),
+        sort: selectSort.value,
         uploadStartMs,
         uploadEndMs
       } 
@@ -744,6 +731,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       type: 'START_RETRY_FAILED_DOWNLOAD',
       payload: {
         filterNames: failedFiles.map(f => f.name),
+        sort: selectSort.value,
         minCount,
         uploadStartMs,
         uploadEndMs
@@ -850,11 +838,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 2. 排序
     const sortVal = selectSort.value;
-    files.sort((a, b) => {
-      if (sortVal === 'count_desc') return (b.downloadCount || 0) - (a.downloadCount || 0);
-      if (sortVal === 'time_asc') return (a.uploadTime || '').localeCompare(b.uploadTime || '');
-      return (b.uploadTime || '').localeCompare(a.uploadTime || ''); // time_desc
-    });
+    files.sort((a, b) => compareDownloadItems(a, b, sortVal));
 
     // 3. 渲染
     document.getElementById('count-found').innerText = files.length;
@@ -867,11 +851,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isDownloaded = f.status === 'done' || downloadedHistory.includes(f.name);
         return `
         <li class="file-item ${f.downloadCount >= 30 ? 'download-tier-30' : f.downloadCount >= 25 ? 'download-tier-25' : ''} ${isDownloaded ? 'downloaded' : ''}">
-          <span class="file-name" title="${f.name}">${f.name}</span>
-          <span class="file-time">${f.uploadTime || '-'}</span>
-          <span class="file-count ${f.downloadCount >= 30 ? 'count-high' : ''}">${f.downloadCount || 0}</span>
+          <span class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+          <span class="file-time">${escapeHtml(f.uploadTime || '-')}</span>
+          <span class="file-count ${f.downloadCount >= 30 ? 'count-high' : ''}">${escapeHtml(f.downloadCount || 0)}</span>
           <div class="col-status">
-            ${isDownloaded ? '<span class="status-badge status-done">已下载</span>' : f.status === 'pending' ? `<button class="btn-single-dl" data-name="${f.name}">下载</button>` : `<span class="status-badge status-${f.status}">${getStatusText(f.status)}</span>`}
+            ${isDownloaded ? '<span class="status-badge status-done">已下载</span>' : f.status === 'pending' ? `<button class="btn-single-dl" data-name="${escapeHtml(f.name)}">下载</button>` : `<span class="status-badge status-${escapeHtml(f.status)}">${escapeHtml(getStatusText(f.status))}</span>`}
           </div>
         </li>
       `;
@@ -884,15 +868,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 日志展示
     const logs = data.logs || [];
-    logViewerEl.innerHTML = logs.map(l => `<div class="log-entry">[${new Date(l.timestamp).toLocaleTimeString()}] ${l.message}</div>`).reverse().join('');
+    logViewerEl.innerHTML = logs.map(l => `<div class="log-entry">[${new Date(l.timestamp).toLocaleTimeString()}] ${escapeHtml(l.message)}</div>`).reverse().join('');
 
     // 音频展示
     const audioFoundCountEl = document.getElementById('audio-found-count');
     if (audioFoundCountEl) audioFoundCountEl.innerText = audioItems.length;
 
-    audioItems.sort((a, b) => audioSort.value === 'count_desc'
-      ? (b.downloadCount || 0) - (a.downloadCount || 0)
-      : (b.uploadTime || '').localeCompare(a.uploadTime || ''));
+    audioItems.sort((a, b) => compareDownloadItems(a, b, audioSort.value));
 
     if (audioListEl) {
       audioListEl.innerHTML = audioItems.length === 0 
@@ -902,12 +884,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           const workflow = getMp3VideoWorkflowDisplay(a.mp3VideoWorkflow);
           return `
           <li class="audio-item ${a.downloadCount >= 30 ? 'audio-tier-30' : a.downloadCount >= 20 ? 'audio-tier-20' : a.downloadCount >= 10 ? 'audio-tier-10' : ''} ${isAudioDownloaded ? 'downloaded' : ''}">
-            <span class="file-name" title="${a.name}">${a.name}</span>
-            <span class="file-time">${a.uploadTime || '-'}</span>
-            <span class="file-count ${a.downloadCount >= 30 ? 'count-high' : ''}" style="text-align:center;">${a.downloadCount || 0}</span>
+            <span class="file-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</span>
+            <span class="file-time">${escapeHtml(a.uploadTime || '-')}</span>
+            <span class="file-count ${a.downloadCount >= 30 ? 'count-high' : ''}" style="text-align:center;">${escapeHtml(a.downloadCount || 0)}</span>
             <span class="workflow-badge workflow-${workflow.state}">${workflow.label}</span>
             <div class="col-status">
-              ${isAudioDownloaded ? '<span class="status-badge status-done">已下载</span>' : a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${getStatusText(a.status)}</span>`}
+              ${isAudioDownloaded ? '<span class="status-badge status-done">已下载</span>' : a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${escapeHtml(a.name)}">下载</button>` : `<span class="status-badge status-${escapeHtml(a.status)}">${escapeHtml(getStatusText(a.status))}</span>`}
             </div>
           </li>
         `;
