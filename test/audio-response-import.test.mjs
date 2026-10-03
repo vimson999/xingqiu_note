@@ -47,6 +47,57 @@ test('parses a copied audio search response into importable list items', () => {
   }]);
 });
 
+test('extracts only audio attachments from an audio topic response', () => {
+  const parsed = parseAudioSearchResponse(JSON.stringify({
+    succeeded: true,
+    resp_data: {
+      topics: [{
+        topic_id: 14425582828444882,
+        topic_uid: '14425582828444882',
+        group: { group_id: 28888112822211, name: '前沿信息收录' },
+        create_time: '2026-09-11T20:51:31.352+0800',
+        talk: {
+          files: [{
+            file_id: 412882811225428,
+            name: '行情震荡，A股九月还有戏？260911.mp3',
+            hash: 'audio-hash',
+            size: 85395791,
+            duration: 5337,
+            download_count: 30,
+            create_time: '2026-09-11T20:51:30.653+0800'
+          }, {
+            file_id: 214884811448541,
+            name: '行情震荡，A股九月还有戏？260911_纪要.pdf',
+            hash: 'pdf-hash',
+            size: 1212371,
+            duration: 0,
+            download_count: 36,
+            create_time: '2026-09-11T20:51:06.646+0800'
+          }]
+        }
+      }]
+    }
+  }));
+
+  assert.equal(parsed.nextIndex, null);
+  assert.equal(parsed.sourceCount, 2);
+  assert.equal(parsed.skippedCount, 1);
+  assert.deepEqual(parsed.items, [{
+    fileId: '412882811225428',
+    name: '行情震荡，A股九月还有戏？260911.mp3',
+    uploadTime: '2026-09-11 20:51',
+    downloadCount: 30,
+    fileHash: 'audio-hash',
+    fileSize: 85395791,
+    duration: 5337,
+    topicId: '14425582828444882',
+    topicUid: '14425582828444882',
+    groupId: '28888112822211',
+    groupName: '前沿信息收录',
+    source: 'api-import'
+  }]);
+});
+
 test('rejects responses that are not a successful audio search payload', () => {
   assert.throws(
     () => parseAudioSearchResponse('{"succeeded":false,"resp_data":{"files":[]}}'),

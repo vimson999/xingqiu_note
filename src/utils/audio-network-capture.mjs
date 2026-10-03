@@ -1,5 +1,6 @@
 const AUDIO_SEARCH_ORIGIN = 'https://api.zsxq.com';
 const AUDIO_SEARCH_PATH = '/v2/search/files';
+const AUDIO_TOPIC_PATH = '/v2/hashtags/88844545452542/topics';
 const FILE_TOPIC_PATH = '/v2/hashtags/51184248544214/topics';
 
 export function isAudioSearchRequest(rawUrl) {
@@ -12,6 +13,19 @@ export function isAudioSearchRequest(rawUrl) {
   } catch {
     return false;
   }
+}
+
+export function isAudioTopicRequest(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    return url.origin === AUDIO_SEARCH_ORIGIN && url.pathname === AUDIO_TOPIC_PATH;
+  } catch {
+    return false;
+  }
+}
+
+export function isAudioImportRequest(rawUrl) {
+  return isAudioSearchRequest(rawUrl) || isAudioTopicRequest(rawUrl);
 }
 
 export function isFileTopicRequest(rawUrl) {

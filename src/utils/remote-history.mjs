@@ -5,6 +5,40 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export function getMp3VideoWorkflowDisplay(workflow) {
+  if (!workflow || typeof workflow !== 'object') {
+    return { label: '暂无状态', state: 'unavailable' };
+  }
+  if (workflow.submitted !== true) {
+    return { label: '未投递', state: 'not-submitted' };
+  }
+  if (workflow.completed === true) {
+    return { label: '已完成', state: 'completed' };
+  }
+  if (['pending', 'queued', 'processing', 'running'].includes(workflow.status)) {
+    return { label: '处理中', state: 'processing' };
+  }
+  if (workflow.status === 'failed') {
+    return { label: '投递失败', state: 'failed' };
+  }
+  if (workflow.status === 'canceled') {
+    return { label: '已取消', state: 'canceled' };
+  }
+  return { label: '已投递', state: 'submitted' };
+}
+
+export function isValidRemoteHistoryEndpoint(value) {
+  try {
+    const endpoint = new URL(value);
+    if (endpoint.protocol === 'https:') return true;
+    return endpoint.protocol === 'http:'
+      && endpoint.hostname === '127.0.0.1'
+      && endpoint.port === '5001';
+  } catch {
+    return false;
+  }
+}
+
 function remoteRecordTimestamp(record) {
   const value = record?.last_seen_at || record?.downloaded_at || record?.published_at_canonical || record?.published_at;
   const timestamp = Date.parse(value || '');
@@ -83,13 +117,15 @@ export function applyRemoteHistory(items = [], remoteFiles = []) {
 
     const latestDownloadCount = toNumber(matchingRecord.latest_download_count);
     historyNames.push(item.name);
+    const workflow = matchingRecord.mp3_video_workflow;
     return {
       ...item,
       status: 'done',
       remoteDedupeKey: matchingRecord.dedupe_key || null,
       remoteDownloadedAt: matchingRecord.downloaded_at || null,
       remoteSourceUrl: matchingRecord.source_url || null,
-      downloadCount: latestDownloadCount ?? item.downloadCount ?? 0
+      downloadCount: latestDownloadCount ?? item.downloadCount ?? 0,
+      ...(workflow && typeof workflow === 'object' ? { mp3VideoWorkflow: workflow } : {})
     };
   });
 

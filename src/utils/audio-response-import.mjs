@@ -68,15 +68,28 @@ export function parseAudioSearchResponse(rawResponse) {
   if (!response || response.succeeded !== true) {
     throw new Error('AUDIO_IMPORT_RESPONSE_NOT_SUCCEEDED');
   }
-  if (!Array.isArray(response.resp_data?.files)) {
+  const responseFiles = response.resp_data?.files;
+  const responseTopics = response.resp_data?.topics;
+  if (!Array.isArray(responseFiles) && !Array.isArray(responseTopics)) {
     throw new Error('AUDIO_IMPORT_FILES_MISSING');
   }
 
-  const sourceFiles = response.resp_data.files;
+  const sourceFiles = Array.isArray(responseFiles)
+    ? responseFiles
+    : responseTopics.flatMap(topic => (
+      Array.isArray(topic?.talk?.files)
+        ? topic.talk.files.map(file => ({
+          file,
+          topic_id: topic.topic_id,
+          topic_uid: topic.topic_uid,
+          group: topic.group
+        }))
+        : []
+    ));
   const items = sourceFiles.map(normalizeAudioItem).filter(Boolean);
   return {
     items,
-    nextIndex: Number.isFinite(Number(response.resp_data.index))
+    nextIndex: Array.isArray(responseFiles) && Number.isFinite(Number(response.resp_data.index))
       ? Number(response.resp_data.index)
       : null,
     sourceCount: sourceFiles.length,

@@ -3,6 +3,7 @@ import { formatBatchProgress } from '../utils/batch-progress.mjs';
 import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
 import { buildListJsonExport } from '../utils/list-json-export.mjs';
+import { getMp3VideoWorkflowDisplay } from '../utils/remote-history.mjs';
 
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
@@ -898,11 +899,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         ? '<li class="empty-hint">进入音频搜索页后点击“扫描”</li>'
         : audioItems.map(a => {
           const isAudioDownloaded = a.status === 'done' || downloadedAudioHistory.includes(a.name);
+          const workflow = getMp3VideoWorkflowDisplay(a.mp3VideoWorkflow);
           return `
           <li class="audio-item ${a.downloadCount >= 30 ? 'audio-tier-30' : a.downloadCount >= 20 ? 'audio-tier-20' : a.downloadCount >= 10 ? 'audio-tier-10' : ''} ${isAudioDownloaded ? 'downloaded' : ''}">
             <span class="file-name" title="${a.name}">${a.name}</span>
             <span class="file-time">${a.uploadTime || '-'}</span>
             <span class="file-count ${a.downloadCount >= 30 ? 'count-high' : ''}" style="text-align:center;">${a.downloadCount || 0}</span>
+            <span class="workflow-badge workflow-${workflow.state}">${workflow.label}</span>
             <div class="col-status">
               ${isAudioDownloaded ? '<span class="status-badge status-done">已下载</span>' : a.status === 'pending' ? `<button class="btn-single-audio-dl" data-name="${a.name}">下载</button>` : `<span class="status-badge status-${a.status}">${getStatusText(a.status)}</span>`}
             </div>

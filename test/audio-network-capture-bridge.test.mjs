@@ -54,3 +54,29 @@ test('ignores captured responses when an old bridge context is invalidated after
   });
   assert.equal(sendAttempts, 1);
 });
+
+test('forwards the configured audio topic response to the audio importer', async () => {
+  let forwardedMessage = null;
+  const { fakeWindow, messageListener } = await loadBridge((message, callback) => {
+    forwardedMessage = message;
+    callback?.();
+  });
+  const sourceUrl = 'https://api.zsxq.com/v2/hashtags/88844545452542/topics?count=20';
+  const rawResponse = '{"succeeded":true,"resp_data":{"topics":[]}}';
+
+  messageListener({
+    source: fakeWindow,
+    origin: fakeWindow.location.origin,
+    data: {
+      source: 'ZSXQ_ASSISTANT_SEARCH_CAPTURE',
+      type: 'SEARCH_RESPONSE',
+      captureKind: 'audio',
+      sourceUrl,
+      rawResponse
+    }
+  });
+
+  assert.equal(forwardedMessage?.type, 'AUTO_IMPORT_AUDIO_RESPONSE');
+  assert.equal(forwardedMessage?.payload?.sourceUrl, sourceUrl);
+  assert.equal(forwardedMessage?.payload?.rawResponse, rawResponse);
+});

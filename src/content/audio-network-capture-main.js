@@ -23,6 +23,7 @@
       const keyword = String(url.searchParams.get('keyword') || '').toLowerCase();
       if (url.origin !== 'https://api.zsxq.com') return null;
       if (url.pathname === '/v2/search/files' && keyword.includes('mp3')) return 'audio';
+      if (url.pathname === '/v2/hashtags/88844545452542/topics') return 'audio';
       if (url.pathname === '/v2/hashtags/51184248544214/topics') return 'pdf';
       return null;
     } catch {

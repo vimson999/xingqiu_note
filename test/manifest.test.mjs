@@ -8,4 +8,5 @@ test('allows the service worker to call the configured remote history host', asy
   const manifest = JSON.parse(await readFile(MANIFEST_URL, 'utf8'));
 
   assert.ok(manifest.host_permissions.includes('https://xiaoshanqing.tech/*'));
+  assert.ok(manifest.host_permissions.includes('http://127.0.0.1:5001/*'));
 });

@@ -5,11 +5,29 @@ import { SETTINGS, resolveRemoteHistoryEndpoint } from '../src/config/settings.j
 import {
   applyRemoteHistory,
   buildRemoteHistorySigningText,
+  getMp3VideoWorkflowDisplay,
   hmacSha256Hex,
+  isValidRemoteHistoryEndpoint,
   mergeRemoteHistoryRecords,
   normalizeRemoteFilename,
   sha256Hex
 } from '../src/utils/remote-history.mjs';
+
+test('accepts HTTPS endpoints and only the configured local history endpoint', () => {
+  assert.equal(isValidRemoteHistoryEndpoint('https://xiaoshanqing.tech/api/v1/zsxq/browser-import/history'), true);
+  assert.equal(isValidRemoteHistoryEndpoint('http://127.0.0.1:5001/api/v1/zsxq/browser-import/history'), true);
+  assert.equal(isValidRemoteHistoryEndpoint('http://127.0.0.1:5002/api/v1/zsxq/browser-import/history'), false);
+  assert.equal(isValidRemoteHistoryEndpoint('http://example.com/api/v1/zsxq/browser-import/history'), false);
+});
+
+test('maps MP3 video workflow states to user-facing labels', () => {
+  assert.deepEqual(getMp3VideoWorkflowDisplay(null), { label: '暂无状态', state: 'unavailable' });
+  assert.deepEqual(getMp3VideoWorkflowDisplay({ submitted: false }), { label: '未投递', state: 'not-submitted' });
+  assert.deepEqual(getMp3VideoWorkflowDisplay({ submitted: true, completed: true, status: 'completed' }), { label: '已完成', state: 'completed' });
+  assert.deepEqual(getMp3VideoWorkflowDisplay({ submitted: true, completed: false, status: 'processing' }), { label: '处理中', state: 'processing' });
+  assert.deepEqual(getMp3VideoWorkflowDisplay({ submitted: true, completed: false, status: 'failed' }), { label: '投递失败', state: 'failed' });
+  assert.deepEqual(getMp3VideoWorkflowDisplay({ submitted: true, completed: false, status: 'canceled' }), { label: '已取消', state: 'canceled' });
+});
 
 test('normalizes Chrome duplicate suffixes before matching filenames', () => {
   assert.equal(
@@ -60,6 +78,14 @@ test('uses the persisted dedupe key first and falls back to normalized filename 
       filename: '研究报告.mp3',
       normalized_filename: '研究报告.mp3',
       latest_download_count: 12,
+      mp3_video_workflow: {
+        submitted: true,
+        job_id: 'workflow-job-1',
+        status: 'processing',
+        step: 'landscape_video_waiting',
+        submitted_at: '2026-09-23T08:19:27.791004',
+        completed: false
+      },
       success: true
     },
     {
@@ -82,6 +108,14 @@ test('uses the persisted dedupe key first and falls back to normalized filename 
   assert.equal(result.items[1].status, 'done');
   assert.equal(result.items[1].remoteDedupeKey, 'metadata:bootstrap');
   assert.equal(result.items[1].downloadCount, 12);
+  assert.deepEqual(result.items[1].mp3VideoWorkflow, {
+    submitted: true,
+    job_id: 'workflow-job-1',
+    status: 'processing',
+    step: 'landscape_video_waiting',
+    submitted_at: '2026-09-23T08:19:27.791004',
+    completed: false
+  });
   assert.equal(result.items[2].status, 'pending');
 });
 
@@ -116,9 +150,11 @@ test('keeps previously trusted records when an incremental response has no files
 test('migrates a previously saved default endpoint without changing custom endpoints', () => {
   const currentEndpoint = SETTINGS.REMOTE_HISTORY.ENDPOINT;
   const legacyEndpoint = 'https://ji448ziqobpp.ngrok.xiaomiqiu123.top/api/v1/zsxq/browser-import/history';
+  const productionEndpoint = 'https://xiaoshanqing.tech/api/v1/zsxq/browser-import/history';
 
   assert.equal(resolveRemoteHistoryEndpoint(currentEndpoint), currentEndpoint);
   assert.equal(resolveRemoteHistoryEndpoint(`${legacyEndpoint}/`), currentEndpoint);
+  assert.equal(resolveRemoteHistoryEndpoint(`${productionEndpoint}/`), currentEndpoint);
   assert.equal(
     resolveRemoteHistoryEndpoint('https://custom.example/history'),
     'https://custom.example/history'

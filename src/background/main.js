@@ -10,6 +10,7 @@ import {
   getRemoteHistoryNames,
   getTrustedRemoteFiles,
   hmacSha256Hex,
+  isValidRemoteHistoryEndpoint,
   mergeRemoteHistoryRecords,
   sha256Hex
 } from '../utils/remote-history.mjs';
@@ -17,7 +18,7 @@ import { createBatchProgress, updateBatchProgress } from '../utils/batch-progres
 import { downloadNamesMatch, findExactDownloadMatches } from '../utils/download-match.mjs';
 import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
-import { isAudioSearchRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
+import { isAudioImportRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
 
 let isBatchRunning = false;
 let stopBatchRequested = false;
@@ -124,7 +125,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function automaticallyImportAudioResponse(payload = {}) {
   const sourceUrl = typeof payload.sourceUrl === 'string' ? payload.sourceUrl : '';
   const rawResponse = typeof payload.rawResponse === 'string' ? payload.rawResponse : '';
-  if (!isAudioSearchRequest(sourceUrl)) {
+  if (!isAudioImportRequest(sourceUrl)) {
     return { success: false, error: 'AUDIO_CAPTURE_SOURCE_INVALID' };
   }
 
@@ -141,7 +142,7 @@ async function automaticallyImportAudioResponse(payload = {}) {
   );
   await chrome.storage.local.set({ pendingAudio: merged.items });
   if (merged.addedCount > 0 || merged.updatedCount > 0) {
-    await addLog('INFO', `音频搜索接口自动导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
+    await addLog('INFO', `音频接口自动导入：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
   }
   return {
     success: true,
@@ -250,12 +251,7 @@ function getRemoteHistoryStorageKeys(kind) {
 function getRemoteHistoryConfigError(config, tabId) {
   if (!config.appId || !config.appSecret) return 'REMOTE_HISTORY_CREDENTIALS_MISSING';
   if (!config.groupId || !tabId) return 'REMOTE_HISTORY_SCOPE_MISSING';
-  try {
-    const endpoint = new URL(config.endpoint);
-    if (endpoint.protocol !== 'https:') return 'REMOTE_HISTORY_ENDPOINT_INVALID';
-  } catch {
-    return 'REMOTE_HISTORY_ENDPOINT_INVALID';
-  }
+  if (!isValidRemoteHistoryEndpoint(config.endpoint)) return 'REMOTE_HISTORY_ENDPOINT_INVALID';
   return null;
 }
 

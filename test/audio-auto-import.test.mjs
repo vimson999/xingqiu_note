@@ -132,3 +132,74 @@ test('automatically merges a captured audio response without replacing local dow
     globalThis.chrome = originalChrome;
   }
 });
+
+test('automatically imports audio attachments captured from the audio topic endpoint', async () => {
+  const storage = {
+    pendingAudio: [],
+    downloadedAudioHistory: [],
+    logs: []
+  };
+  const onMessage = createChromeEvent();
+  const onAlarm = createChromeEvent();
+  const originalChrome = globalThis.chrome;
+  globalThis.chrome = {
+    runtime: { lastError: undefined, onMessage },
+    alarms: { onAlarm },
+    storage: {
+      local: {
+        async get(keys) {
+          return pickStorageValues(storage, keys);
+        },
+        async set(values) {
+          Object.assign(storage, values);
+        }
+      }
+    }
+  };
+
+  try {
+    await import(`../src/background/main.js?audio-topic-auto-import-test=${Date.now()}`);
+    const listener = [...onMessage.listeners][0];
+    assert.ok(listener, 'background message listener should be registered');
+
+    const response = await sendMessage(listener, {
+      type: 'AUTO_IMPORT_AUDIO_RESPONSE',
+      payload: {
+        sourceUrl: 'https://api.zsxq.com/v2/hashtags/88844545452542/topics?count=20',
+        rawResponse: JSON.stringify({
+          succeeded: true,
+          resp_data: {
+            topics: [{
+              topic_uid: '14425582828444882',
+              group: { group_id: '28888112822211', name: '前沿信息收录' },
+              talk: {
+                files: [{
+                  file_id: 'audio-topic-file-id',
+                  name: '行情震荡，A股九月还有戏？260911.mp3',
+                  download_count: 30,
+                  duration: 5337,
+                  create_time: '2026-09-11T20:51:30.653+0800'
+                }, {
+                  file_id: 'audio-topic-pdf-id',
+                  name: '行情震荡，A股九月还有戏？260911_纪要.pdf',
+                  download_count: 36,
+                  create_time: '2026-09-11T20:51:06.646+0800'
+                }]
+              }
+            }]
+          }
+        })
+      }
+    });
+
+    assert.equal(response.success, true);
+    assert.equal(response.addedCount, 1);
+    assert.equal(response.sourceCount, 2);
+    assert.equal(response.skippedCount, 1);
+    assert.equal(storage.pendingAudio.length, 1);
+    assert.equal(storage.pendingAudio[0].fileId, 'audio-topic-file-id');
+    assert.equal(storage.pendingAudio[0].status, 'pending');
+  } finally {
+    globalThis.chrome = originalChrome;
+  }
+});
