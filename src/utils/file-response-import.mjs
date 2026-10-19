@@ -1,4 +1,6 @@
 import { normalizeDownloadFilename } from './download-match.mjs';
+import { topicAttachments } from './topic-attachments.mjs';
+import { sameGroup, wasDownloaded } from './group-scope.mjs';
 
 const PDF_EXTENSION_PATTERN = /\.pdf$/i;
 
@@ -43,7 +45,7 @@ function normalizeFileItem(topic, file) {
 
 function getItemIndexForImport(items, importedItem) {
   if (importedItem.fileId) {
-    const byFileId = items.findIndex(item => toOptionalString(item.fileId) === importedItem.fileId);
+    const byFileId = items.findIndex(item => sameGroup(item, importedItem) && toOptionalString(item.fileId) === importedItem.fileId);
     if (byFileId !== -1) return byFileId;
   }
 
@@ -51,6 +53,7 @@ function getItemIndexForImport(items, importedItem) {
   if (!importedName) return -1;
 
   return items.findIndex((item) => {
+    if (!sameGroup(item, importedItem)) return false;
     // Name matching only bridges entries collected before an API import assigned a file ID.
     if (importedItem.fileId && toOptionalString(item.fileId)) return false;
     return normalizeDownloadFilename(item.name) === importedName;
@@ -68,14 +71,12 @@ export function parseFileSearchResponse(rawResponse) {
   if (!response || response.succeeded !== true) {
     throw new Error('FILE_IMPORT_RESPONSE_NOT_SUCCEEDED');
   }
-  if (!Array.isArray(response.resp_data?.topics)) {
+  if (!Array.isArray(response.resp_data?.topics) && !Array.isArray(response.resp_data?.files)) {
     throw new Error('FILE_IMPORT_TOPICS_MISSING');
   }
 
-  const topics = response.resp_data.topics;
-  const sourceFiles = topics.flatMap(topic => (
-    Array.isArray(topic?.talk?.files) ? topic.talk.files.map(file => ({ topic, file })) : []
-  ));
+  const topics = response.resp_data.topics || [];
+  const sourceFiles = topicAttachments(response.resp_data);
   const items = sourceFiles
     .map(({ topic, file }) => normalizeFileItem(topic, file))
     .filter(Boolean);
@@ -90,18 +91,16 @@ export function parseFileSearchResponse(rawResponse) {
 
 export function mergeImportedFileItems(existingItems = [], importedItems = [], downloadedHistory = []) {
   const items = existingItems.map(item => ({ ...item }));
-  const downloadedNames = new Set(
-    downloadedHistory
-      .map(name => normalizeDownloadFilename(name))
-      .filter(Boolean)
-  );
+  const downloadedNames = new Set(downloadedHistory);
+  const normalizedNames = new Set(downloadedHistory.map(normalizeDownloadFilename));
   let addedCount = 0;
   let updatedCount = 0;
 
   for (const importedItem of importedItems) {
     const existingIndex = getItemIndexForImport(items, importedItem);
     if (existingIndex === -1) {
-      const isDownloaded = downloadedNames.has(normalizeDownloadFilename(importedItem.name));
+      const isDownloaded = wasDownloaded(downloadedNames, importedItem)
+        || wasDownloaded(normalizedNames, { ...importedItem, name: normalizeDownloadFilename(importedItem.name) });
       items.push({
         ...importedItem,
         status: isDownloaded ? 'done' : 'pending'

@@ -1,3 +1,4 @@
+import { wasDownloaded } from './group-scope.mjs';
 const KNOWN_STATUSES = new Set(['done', 'pending', 'failed', 'processing']);
 
 function toOptionalString(value) {
@@ -16,7 +17,7 @@ function toNullableNonNegativeNumber(value) {
 }
 
 function getExportStatus(item, downloadedNames) {
-  if (downloadedNames.has(String(item?.name || ''))) return 'done';
+  if (wasDownloaded(downloadedNames, item)) return 'done';
   const status = String(item?.status || 'pending');
   return KNOWN_STATUSES.has(status) ? status : 'pending';
 }
@@ -31,6 +32,7 @@ export function buildListJsonExport({ kind, items = [], downloadedNames = [], ex
     fileId: toOptionalString(item?.fileId),
     topicId: toOptionalString(item?.topicId),
     groupName: toOptionalString(item?.groupName),
+    ...(item?.groupId ? { groupId: String(item.groupId) } : {}),
     fileSize: toNullableNonNegativeNumber(item?.fileSize),
     duration: toNullableNonNegativeNumber(item?.duration)
   }));

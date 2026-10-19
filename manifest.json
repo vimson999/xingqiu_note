@@ -29,14 +29,14 @@
       "matches": [
         "https://*.zsxq.com/*"
       ],
-      "js": ["src/content/audio-network-capture-bridge.js"],
+      "js": ["src/content/audio-network-capture-bridge.js", "src/content/api-recorder-bridge.js"],
       "run_at": "document_start"
     },
     {
       "matches": [
         "https://*.zsxq.com/*"
       ],
-      "js": ["src/content/audio-network-capture-main.js"],
+      "js": ["src/content/audio-network-capture-main.js", "src/content/api-recorder-main.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },

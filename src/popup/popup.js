@@ -6,6 +6,8 @@ import { buildListJsonExport } from '../utils/list-json-export.mjs';
 import { getMp3VideoWorkflowDisplay } from '../utils/remote-history.mjs';
 import { compareDownloadItems, isWithinUploadRange, parseUploadTimeValue } from '../utils/download-selection.mjs';
 import { escapeHtml } from '../utils/html.mjs';
+import { initApiRecorderPanel } from './api-recorder-panel.mjs';
+import { LEGACY_GROUP_ID, pageGroupId, inGroup, wasDownloaded, historyInGroup } from '../utils/group-scope.mjs';
 
 /**
  * Popup 控制逻辑 v0.4.4 - 知识星球助手
@@ -101,6 +103,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   const fileListEl = document.getElementById('file-list');
   const logViewerEl = document.getElementById('log-viewer');
   const btnSaveRemoteHistoryConfig = document.getElementById('btn-save-remote-history-config');
+  let currentGroupId = LEGACY_GROUP_ID;
+  let renderRevision = 0;
+  async function getListData(keys) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    currentGroupId = pageGroupId(tab?.url) || currentGroupId;
+    const data = await chrome.storage.local.get(keys);
+    for (const key of ['pendingFiles', 'pendingAudio']) {
+      if (Array.isArray(data[key])) data[key] = data[key].filter(item => inGroup(item, currentGroupId));
+    }
+    const label = document.getElementById('current-list-group');
+    if (label) label.textContent = `星球 ${currentGroupId}`;
+    return data;
+  }
+  async function setListData(updates) {
+    const groupId = currentGroupId;
+    const keys = Object.keys(updates);
+    const data = await chrome.storage.local.get(keys);
+    for (const key of ['pendingFiles', 'pendingAudio']) {
+      if (Array.isArray(updates[key])) updates[key] = [
+        ...(data[key] || []).filter(item => !inGroup(item, groupId)),
+        ...updates[key].map(item => ({ ...item, groupId: item.groupId || groupId }))
+      ];
+    }
+    for (const key of ['downloadedHistory', 'downloadedAudioHistory']) {
+      if (Array.isArray(updates[key])) updates[key] = [
+        ...(data[key] || []).filter(name => !historyInGroup(name, groupId)), ...updates[key]
+      ];
+    }
+    await chrome.storage.local.set(updates);
+  }
 
   function renderBatchProgress(kind, progress) {
     const container = document.getElementById(`${kind}-batch-progress`);
@@ -208,7 +240,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const itemsKey = isAudio ? 'pendingAudio' : 'pendingFiles';
     const historyKey = isAudio ? 'downloadedAudioHistory' : 'downloadedHistory';
     const label = isAudio ? '音频' : 'PDF';
-    const data = await chrome.storage.local.get([itemsKey, historyKey]);
+    const data = await getListData([itemsKey, historyKey]);
     const items = data[itemsKey] || [];
     if (items.length === 0) {
       alert('列表为空，无可导出数据');
@@ -270,6 +302,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     button.disabled = true;
     button.innerText = '同步中...';
     try {
+      await getListData([]);
+      const config = getRemoteHistoryConfigFromForm();
+      if (config.groupId !== currentGroupId) {
+        alert('当前星球与历史同步配置不一致，请先在上传辅助中配置对应星球。');
+        return;
+      }
       await persistRemoteHistoryConfig();
       const result = await sendRuntimeMessage({ type: 'SYNC_REMOTE_HISTORY', payload: { kind } });
       if (!result.success) {
@@ -347,8 +385,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
 
   // 音频采集
-  btnGoAudio.onclick = () => {
-    chrome.tabs.create({ url: 'https://wx.zsxq.com/search/mp3?groupId=28888112822211&searchUid=0.8761816833421697' });
+  btnGoAudio.onclick = async () => {
+    await getListData([]);
+    chrome.tabs.create({ url: `https://wx.zsxq.com/search/mp3?groupId=${currentGroupId}&searchUid=${Math.random()}` });
   };
 
   btnSaveRemoteHistoryConfig.onclick = async () => {
@@ -403,13 +442,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (parsed.sourceCount > 0 && parsed.items.length === 0) {
         throw new Error('AUDIO_IMPORT_NO_AUDIO_FILES');
       }
-      const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
+      const data = await getListData(['pendingAudio', 'downloadedAudioHistory']);
+      const incoming = parsed.items.filter(item => !item.groupId || inGroup(item, currentGroupId))
+        .map(item => ({ ...item, groupId: item.groupId || currentGroupId }));
+      if (parsed.items.length && !incoming.length) throw new Error('响应中的音频属于其他星球。');
       const merged = mergeImportedAudioItems(
         data.pendingAudio || [],
-        parsed.items,
+        incoming,
         data.downloadedAudioHistory || []
       );
-      await chrome.storage.local.set({ pendingAudio: merged.items });
+      await setListData({ pendingAudio: merged.items });
       await showLog(`音频接口响应导入完成：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
       closeAudioImportPanel();
       await renderFromStorage();
@@ -455,13 +497,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const parsed = parseFileSearchResponse(rawResponse);
       if (parsed.items.length === 0) throw new Error('FILE_IMPORT_NO_PDF_FILES');
-      const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
+      const data = await getListData(['pendingFiles', 'downloadedHistory']);
+      const incoming = parsed.items.filter(item => !item.groupId || inGroup(item, currentGroupId))
+        .map(item => ({ ...item, groupId: item.groupId || currentGroupId }));
+      if (!incoming.length) throw new Error('响应中的 PDF 属于其他星球。');
       const merged = mergeImportedFileItems(
         data.pendingFiles || [],
-        parsed.items,
+        incoming,
         data.downloadedHistory || []
       );
-      await chrome.storage.local.set({ pendingFiles: merged.items });
+      await setListData({ pendingFiles: merged.items });
       await showLog(`PDF 接口响应导入完成：新增 ${merged.addedCount} 条，更新 ${merged.updatedCount} 条。`);
       closeFileImportPanel();
       await renderFromStorage();
@@ -497,11 +542,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const untilName = document.getElementById('audio-download-until').value.trim();
       const uploadStartMs = getDateTimeInputMs('audio-upload-start-time');
       const uploadEndMs = getDateTimeInputMs('audio-upload-end-time');
-      const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
+      const data = await getListData(['pendingAudio', 'downloadedAudioHistory']);
       const downloadedAudioHistory = data.downloadedAudioHistory || [];
       let audioItems = (data.pendingAudio || []).filter(a => (
         a.status !== 'done'
-        && !downloadedAudioHistory.includes(a.name)
+        && !wasDownloaded(downloadedAudioHistory, a)
         && (minCount <= 0 || (a.downloadCount || 0) >= minCount)
         && isWithinUploadRange(a, uploadStartMs, uploadEndMs)
       ));
@@ -554,7 +599,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minCount = parseInt(document.getElementById('audio-min-count').value) || 0;
     const uploadStartMs = getDateTimeInputMs('audio-upload-start-time');
     const uploadEndMs = getDateTimeInputMs('audio-upload-end-time');
-    const data = await chrome.storage.local.get(['pendingAudio']);
+    const data = await getListData(['pendingAudio']);
     const failedAudio = (data.pendingAudio || []).filter(a => (
       a.status === 'failed'
       && (minCount <= 0 || (a.downloadCount || 0) >= minCount)
@@ -582,7 +627,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnStopAudio.onclick = () => chrome.runtime.sendMessage({ type: 'STOP_BATCH_DOWNLOAD' });
 
   btnExportAudio.onclick = async () => {
-    const data = await chrome.storage.local.get(['pendingAudio']);
+    const data = await getListData(['pendingAudio']);
     const items = data.pendingAudio || [];
     if (items.length === 0) {
       alert('列表为空，无可导出数据');
@@ -616,18 +661,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnClearAudio.onclick = async () => {
     if (confirm('确定清空音频列表？下载记录将保留，用于避免重复下载。')) {
-      await chrome.storage.local.set({ pendingAudio: [] });
+      await getListData([]);
+      await setListData({ pendingAudio: [] });
       renderFromStorage();
     }
   };
 
   btnClearAudioHistory.onclick = async () => {
     if (confirm('确定清除音频下载记录？已完成的音频会重新变为可下载。')) {
-      const data = await chrome.storage.local.get(['pendingAudio']);
+      const data = await getListData(['pendingAudio']);
       const pendingAudio = (data.pendingAudio || []).map(a => (
         a.status === 'done' ? { ...a, status: 'pending' } : a
       ));
-      await chrome.storage.local.set({ downloadedAudioHistory: [], pendingAudio });
+      await setListData({ downloadedAudioHistory: [], pendingAudio });
       renderFromStorage();
     }
   };
@@ -667,13 +713,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minCount = parseInt(document.getElementById('min-count').value) || 0;
     const uploadStartMs = getDateTimeInputMs('upload-start-time');
     const uploadEndMs = getDateTimeInputMs('upload-end-time');
-    const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
+    const data = await getListData(['pendingFiles', 'downloadedHistory']);
     const downloadedHistory = data.downloadedHistory || [];
     const currentFilter = selectInst.value;
     
     // 应用当前筛选
     let filesToDownload = (data.pendingFiles || []).filter(f => (
-      f.status !== 'done' && !downloadedHistory.includes(f.name)
+      f.status !== 'done' && !wasDownloaded(downloadedHistory, f)
     ));
     if (currentFilter) {
       const keywords = currentFilter.split('|');
@@ -705,7 +751,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const minCount = parseInt(document.getElementById('min-count').value) || 0;
     const uploadStartMs = getDateTimeInputMs('upload-start-time');
     const uploadEndMs = getDateTimeInputMs('upload-end-time');
-    const data = await chrome.storage.local.get(['pendingFiles']);
+    const data = await getListData(['pendingFiles']);
     const currentFilter = selectInst.value;
 
     let failedFiles = (data.pendingFiles || []).filter(f => f.status === 'failed');
@@ -743,7 +789,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 导出列表数据
   btnExportList.onclick = async () => {
-    const { pendingFiles = [] } = await chrome.storage.local.get('pendingFiles');
+    const { pendingFiles = [] } = await getListData('pendingFiles');
     if (pendingFiles.length === 0) {
       alert('列表为空，无可导出数据');
       return;
@@ -768,7 +814,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 清空 & 导出管理
   btnClearFiles.onclick = async () => {
     if (confirm('确定清空当前文件列表？已下载历史会保留，之后重新扫描仍会跳过已下载文件。')) {
-      await chrome.storage.local.set({ pendingFiles: [] });
+      await getListData([]);
+      await setListData({ pendingFiles: [] });
       renderFromStorage();
     }
   };
@@ -796,7 +843,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   audioSort?.addEventListener('change', () => renderFromStorage());
 
   // 6. 存储变化实时更新 UI
-  chrome.storage.onChanged.addListener(() => renderFromStorage());
+  chrome.storage.onChanged.addListener((changes) => {
+    if (Object.keys(changes).some(key => key !== 'apiRecorderSession')) renderFromStorage();
+  });
 
   function getStatusText(status) {
     if (status === 'done') return '完成';
@@ -806,7 +855,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function renderFromStorage() {
-    const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'downloadedAudioHistory', 'logs', 'isDownloading', 'batchDownloadProgress']);
+    const revision = ++renderRevision;
+    const data = await getListData(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'downloadedAudioHistory', 'logs', 'isDownloading', 'batchDownloadProgress']);
+    if (revision !== renderRevision) return;
     let files = data.pendingFiles || [];
     const downloadedHistory = data.downloadedHistory || [];
     const downloadedAudioHistory = data.downloadedAudioHistory || [];
@@ -848,7 +899,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     fileListEl.innerHTML = files.length === 0 
       ? '<li class="empty-hint">无内容</li>'
       : files.map(f => {
-        const isDownloaded = f.status === 'done' || downloadedHistory.includes(f.name);
+        const isDownloaded = f.status === 'done' || wasDownloaded(downloadedHistory, f);
         return `
         <li class="file-item ${f.downloadCount >= 30 ? 'download-tier-30' : f.downloadCount >= 25 ? 'download-tier-25' : ''} ${isDownloaded ? 'downloaded' : ''}">
           <span class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
@@ -880,7 +931,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       audioListEl.innerHTML = audioItems.length === 0 
         ? '<li class="empty-hint">进入音频搜索页后点击“扫描”</li>'
         : audioItems.map(a => {
-          const isAudioDownloaded = a.status === 'done' || downloadedAudioHistory.includes(a.name);
+          const isAudioDownloaded = a.status === 'done' || wasDownloaded(downloadedAudioHistory, a);
           const workflow = getMp3VideoWorkflowDisplay(a.mp3VideoWorkflow);
           return `
           <li class="audio-item ${a.downloadCount >= 30 ? 'audio-tier-30' : a.downloadCount >= 20 ? 'audio-tier-20' : a.downloadCount >= 10 ? 'audio-tier-10' : ''} ${isAudioDownloaded ? 'downloaded' : ''}">
@@ -912,6 +963,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  initApiRecorderPanel(sendRuntimeMessage, downloadJsonList);
+  chrome.tabs.onUpdated?.addListener((_id, changes) => {
+    if (changes.url) renderFromStorage();
+  });
   privateRemoteHistoryCredentials = await loadPrivateRemoteHistoryCredentials();
   const storedConfig = await chrome.storage.local.get(REMOTE_HISTORY_CONFIG_KEY);
   fillRemoteHistoryConfig(storedConfig[REMOTE_HISTORY_CONFIG_KEY]);

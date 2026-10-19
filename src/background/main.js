@@ -16,8 +16,10 @@ import { createBatchProgress, updateBatchProgress } from '../utils/batch-progres
 import { downloadNamesMatch, findExactDownloadMatches } from '../utils/download-match.mjs';
 import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audio-response-import.mjs';
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
-import { isAudioImportRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
+import { groupCaptureId, isAudioImportRequest, isFileTopicRequest } from '../utils/audio-network-capture.mjs';
+import { LEGACY_GROUP_ID, pageGroupId, inGroup, sameGroup, historyKey, wasDownloaded } from '../utils/group-scope.mjs';
 import { selectBatchTasks } from '../utils/download-selection.mjs';
+import { registerApiRecorder } from '../utils/api-recorder.mjs';
 
 let isBatchRunning = false;
 let stopBatchRequested = false;
@@ -26,10 +28,38 @@ const FILE_TASK_TIMEOUT_MS = 35000;
 const DOWNLOAD_START_TIMEOUT_MS = 12000;
 const STALE_PROCESSING_MS = 2 * 60 * 1000;
 const BATCH_PROGRESS_STORAGE_KEY = 'batchDownloadProgress';
+let importQueue = Promise.resolve();
+function enqueueImport(task) {
+  const result = importQueue.then(task);
+  importQueue = result.catch(() => {});
+  return result;
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'MERGE_SCANNED_ITEMS') {
+    enqueueImport(async () => {
+      const { kind, items = [], groupId = LEGACY_GROUP_ID } = message.payload || {};
+      const key = kind === 'audio' ? 'pendingAudio' : 'pendingFiles';
+      const history = kind === 'audio' ? 'downloadedAudioHistory' : 'downloadedHistory';
+      const data = await chrome.storage.local.get([key, history]);
+      const incoming = items.map(item => {
+        const old = (data[key] || []).find(existing => inGroup(existing, groupId) && existing.name === item.name);
+        return { ...item, groupId, downloadCount: old?.downloadCount || 0 };
+      });
+      const merge = kind === 'audio' ? mergeImportedAudioItems : mergeImportedFileItems;
+      const result = merge(data[key] || [], incoming, data[history] || []);
+      await chrome.storage.local.set({ [key]: result.items });
+      return { count: result.items.filter(item => inGroup(item, groupId)).length, found: items.length };
+    }).then(sendResponse).catch(error => sendResponse({ error: error.message }));
+    return true;
+  }
+  if (message.type === 'AUTO_IMPORT_GROUP_RESPONSE') {
+    enqueueImport(() => automaticallyImportGroupResponse(message.payload))
+      .then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
   if (message.type === 'AUTO_IMPORT_AUDIO_RESPONSE') {
-    automaticallyImportAudioResponse(message.payload)
+    enqueueImport(() => automaticallyImportAudioResponse(message.payload))
       .then(result => sendResponse?.(result))
       .catch(async (err) => {
         await addLog('WARN', `音频搜索接口自动导入失败: ${err.message}`);
@@ -38,7 +68,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'AUTO_IMPORT_FILE_RESPONSE') {
-    automaticallyImportFileResponse(message.payload)
+    enqueueImport(() => automaticallyImportFileResponse(message.payload))
       .then(result => sendResponse?.(result))
       .catch(async (err) => {
         await addLog('WARN', `PDF 话题接口自动导入失败: ${err.message}`);
@@ -98,9 +128,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === 'START_BATCH_AUDIO_DOWNLOAD') {
-    if (isBatchRunning) return;
+    if (isBatchRunning) { sendResponse?.({ success: false, error: 'BATCH_RUNNING' }); return; }
     stopBatchRequested = false;
-    startBatchAudioDownload(message.payload || {});
+    startBatchAudioDownload(message.payload || {})
+      .then(() => sendResponse?.({ success: true }))
+      .catch(async error => {
+        isBatchRunning = false;
+        await chrome.storage.local.set({ isDownloading: false });
+        sendResponse?.({ success: false, error: error.message });
+      });
+    return true;
   }
   if (message.type === 'RECONCILE_AUDIO_DOWNLOAD_HISTORY') {
     reconcileAudioDownloadHistory()
@@ -121,6 +158,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 });
+
+registerApiRecorder(chrome);
+
+async function automaticallyImportGroupResponse(payload = {}) {
+  const groupId = groupCaptureId(payload.sourceUrl);
+  if (!groupId) return { success: false, error: 'GROUP_CAPTURE_SOURCE_INVALID' };
+  const pdf = parseFileSearchResponse(payload.rawResponse);
+  const audio = parseAudioSearchResponse(payload.rawResponse);
+  const scoped = items => items.filter(item => !item.groupId || item.groupId === groupId)
+    .map(item => ({ ...item, groupId }));
+  const data = await chrome.storage.local.get(['pendingFiles', 'pendingAudio', 'downloadedHistory', 'downloadedAudioHistory']);
+  const files = mergeImportedFileItems(data.pendingFiles || [], scoped(pdf.items), data.downloadedHistory || []);
+  const audios = mergeImportedAudioItems(data.pendingAudio || [], scoped(audio.items), data.downloadedAudioHistory || []);
+  await chrome.storage.local.set({ pendingFiles: files.items, pendingAudio: audios.items });
+  return { success: true, groupId, pdfCount: files.addedCount, audioCount: audios.addedCount };
+}
+
+async function activeGroup(tab) {
+  if (!tab) [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return pageGroupId(tab?.url) || LEGACY_GROUP_ID;
+}
 
 async function automaticallyImportAudioResponse(payload = {}) {
   const sourceUrl = typeof payload.sourceUrl === 'string' ? payload.sourceUrl : '';
@@ -274,6 +332,10 @@ async function syncRemoteHistory(kind) {
   }
 
   const keys = getRemoteHistoryStorageKeys(kind);
+  if (config.groupId !== LEGACY_GROUP_ID) {
+    keys.remoteHistoryKey += `:${config.groupId}`;
+    keys.syncInfoKey += `:${config.groupId}`;
+  }
   const storage = await chrome.storage.local.get([
     keys.itemsKey,
     keys.downloadHistoryKey,
@@ -281,15 +343,16 @@ async function syncRemoteHistory(kind) {
   ]);
   const incomingFiles = getTrustedRemoteFiles(responseBody.data.files);
   const mergedRemoteFiles = mergeRemoteHistoryRecords(storage[keys.remoteHistoryKey] || [], incomingFiles);
-  const applied = applyRemoteHistory(storage[keys.itemsKey] || [], mergedRemoteFiles);
+  const allItems = storage[keys.itemsKey] || [];
+  const applied = applyRemoteHistory(allItems.filter(item => inGroup(item, config.groupId)), mergedRemoteFiles);
   const downloadedNames = [...new Set([
     ...(storage[keys.downloadHistoryKey] || []),
-    ...getRemoteHistoryNames(mergedRemoteFiles),
-    ...applied.historyNames
+    ...getRemoteHistoryNames(mergedRemoteFiles).map(name => historyKey({ name, groupId: config.groupId })),
+    ...applied.items.filter(item => item.status === 'done').map(historyKey)
   ])];
 
   await chrome.storage.local.set({
-    [keys.itemsKey]: applied.items,
+    [keys.itemsKey]: [...allItems.filter(item => !inGroup(item, config.groupId)), ...applied.items],
     [keys.downloadHistoryKey]: downloadedNames,
     [keys.remoteHistoryKey]: mergedRemoteFiles,
     [keys.syncInfoKey]: {
@@ -361,7 +424,8 @@ async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = 
   const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
   const pendingFiles = resetStaleProcessing(data.pendingFiles || []);
   const downloadedHistory = data.downloadedHistory || [];
-  const tasks = selectBatchTasks(pendingFiles, {
+  const groupId = await activeGroup(tab);
+  const tasks = selectBatchTasks(pendingFiles.filter(item => inGroup(item, groupId)), {
     statuses: options.statuses, downloadedNames: downloadedHistory, filterNames,
     minCount, uploadStartMs, uploadEndMs, limit, sort: options.sort
   });
@@ -389,6 +453,7 @@ async function startBatchDownload(limit, minCount, filterNames, uploadStartMs = 
       taskNames: tasks.map(t => t.name),
       label: options.label || '文件批量下载',
       tabId: tab.id,
+      groupId,
       successCount: 0,
       failedCount: 0,
       startedAt: Date.now(),
@@ -428,7 +493,7 @@ async function runNextBatchDownload() {
   }
 
   const fileName = state.taskNames[state.index];
-  const task = pendingFiles.find(f => f.name === fileName);
+  const task = pendingFiles.find(f => f.name === fileName && inGroup(f, state.groupId || LEGACY_GROUP_ID));
   if (!task) {
     addLog('WARN', `[${state.index + 1}/${state.total}] 任务已不在列表中，跳过: ${fileName}`);
     const skippedState = {
@@ -501,8 +566,9 @@ async function executeDownloadTask(task, current, total, targetTabId = null) {
       ? { id: targetTabId }
       : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
     if (!tab) throw new Error('TAB_LOST');
+    if (chrome.tabs.get && !inGroup(task, await activeGroup(await chrome.tabs.get(tab.id)))) throw new Error('GROUP_CHANGED');
 
-    await updateFileStatus(task.name, 'processing', { processingStartedAt: Date.now() });
+    await updateFileStatus(task.name, 'processing', { processingStartedAt: Date.now() }, task);
     addLog('DEBUG', `[${current}/${total}] 触发: ${task.name.substring(0, 30)}...`);
 
     const downloadWatch = waitForDownloadStarted(task.name, Date.now(), DOWNLOAD_START_TIMEOUT_MS);
@@ -532,7 +598,7 @@ async function executeDownloadTask(task, current, total, targetTabId = null) {
         lastDownloadedAt: Date.now(),
         downloadId: download.id || null,
         downloadFilename: download.filename || ''
-      });
+      }, task);
       await closeDownloadOverlay(tab.id, task.name);
       addLog('INFO', `[${current}/${total}] 成功 | ${cost}s | ${task.name}`);
       return true;
@@ -542,7 +608,7 @@ async function executeDownloadTask(task, current, total, targetTabId = null) {
   } catch (err) {
     const cost = ((Date.now() - tStart) / 1000).toFixed(1);
     addLog('ERROR', `[${current}/${total}] 失败 | ${cost}s | ${err.message} | ${task.name}`);
-    await updateFileStatus(task.name, 'failed', { processingStartedAt: null, lastError: err.message });
+    await updateFileStatus(task.name, 'failed', { processingStartedAt: null, lastError: err.message }, task);
     return false;
   }
 }
@@ -574,7 +640,7 @@ function notifyBatchComplete(tabId, message) {
 
 async function notifyFileBatchResult(state) {
   const data = await chrome.storage.local.get('pendingFiles');
-  const tasks = (data.pendingFiles || []).filter(file => state.taskNames.includes(file.name));
+  const tasks = (data.pendingFiles || []).filter(file => inGroup(file, state.groupId || LEGACY_GROUP_ID) && state.taskNames.includes(file.name));
   const success = tasks.filter(file => file.status === 'done').length;
   const failed = tasks.filter(file => file.status === 'failed').length;
   await notifyBatchComplete(
@@ -583,13 +649,14 @@ async function notifyFileBatchResult(state) {
   );
 }
 
-async function updateFileStatus(fileName, status, extra = {}) {
+async function updateFileStatus(fileName, status, extra = {}, task = {}) {
   const data = await chrome.storage.local.get(['pendingFiles', 'downloadedHistory']);
-  const updated = (data.pendingFiles || []).map(f => f.name === fileName ? { ...f, ...extra, status } : f);
+  const updated = (data.pendingFiles || []).map(f => f.name === fileName && sameGroup(f, task) ? { ...f, ...extra, status } : f);
   const updates = { pendingFiles: updated };
   if (status === 'done') {
     const history = data.downloadedHistory || [];
-    if (!history.includes(fileName)) { history.push(fileName); updates.downloadedHistory = history; }
+    const key = historyKey({ ...task, name: fileName });
+    if (!history.includes(key)) { history.push(key); updates.downloadedHistory = history; }
   }
   await chrome.storage.local.set(updates);
 }
@@ -687,12 +754,14 @@ function searchChromeDownloads(query) {
   });
 }
 
-async function reconcileAudioDownloadHistory({ writeLog = true } = {}) {
+async function reconcileAudioDownloadHistory({ writeLog = true, groupId = null } = {}) {
+  groupId ||= await activeGroup();
   const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
   const downloadedHistory = data.downloadedAudioHistory || [];
   const candidates = (data.pendingAudio || []).filter(audio => (
     (audio.status === 'pending' || audio.status === 'failed')
-    && !downloadedHistory.includes(audio.name)
+    && inGroup(audio, groupId)
+    && !wasDownloaded(downloadedHistory, audio)
   ));
   if (candidates.length === 0) return { matchedCount: 0 };
 
@@ -702,10 +771,16 @@ async function reconcileAudioDownloadHistory({ writeLog = true } = {}) {
   });
   if (error) throw new Error(error);
 
-  const matches = findExactDownloadMatches(candidates.map(audio => audio.name), downloads);
+  const matches = groupId === LEGACY_GROUP_ID
+    ? findExactDownloadMatches(candidates.map(audio => audio.name), downloads)
+    : new Map(candidates.flatMap(audio => {
+      const download = audio.downloadId && downloads.find(item => item.id === audio.downloadId);
+      return download ? [[audio.name, download]] : [];
+    }));
   if (matches.size === 0) return { matchedCount: 0 };
 
   const pendingAudio = (data.pendingAudio || []).map((audio) => {
+    if (!inGroup(audio, groupId)) return audio;
     const download = matches.get(audio.name);
     if (!download) return audio;
     const downloadedAt = Date.parse(download.startTime || '');
@@ -719,7 +794,7 @@ async function reconcileAudioDownloadHistory({ writeLog = true } = {}) {
       downloadFilename: download.filename || ''
     };
   });
-  const history = [...new Set([...downloadedHistory, ...matches.keys()])];
+  const history = [...new Set([...downloadedHistory, ...[...matches.keys()].map(name => historyKey({ name, groupId }))])];
   await chrome.storage.local.set({ pendingAudio, downloadedAudioHistory: history });
   if (writeLog) {
     await addLog('INFO', `音频下载历史校验完成：匹配 ${matches.size} 条，已标记为已下载。`);
@@ -730,14 +805,15 @@ async function reconcileAudioDownloadHistory({ writeLog = true } = {}) {
 async function startBatchAudioDownload({ limit = 5, minCount = 0, uploadStartMs = null, uploadEndMs = null, filterNames, retryFailed = false, sort = 'time_desc' } = {}) {
   isBatchRunning = true;
   const [targetTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const groupId = await activeGroup(targetTab);
   try {
-    await reconcileAudioDownloadHistory({ writeLog: false });
+    await reconcileAudioDownloadHistory({ writeLog: false, groupId });
   } catch (err) {
     await addLog('WARN', `批量下载前音频历史校验失败: ${err.message}`);
   }
   const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
   const downloadedAudioHistory = data.downloadedAudioHistory || [];
-  const tasks = selectBatchTasks(data.pendingAudio || [], {
+  const tasks = selectBatchTasks((data.pendingAudio || []).filter(item => inGroup(item, groupId)), {
     statuses: retryFailed ? ['failed'] : ['pending'], downloadedNames: downloadedAudioHistory,
     filterNames, minCount, uploadStartMs, uploadEndMs, sort, limit
   });
@@ -803,7 +879,8 @@ async function executeAudioDownloadTask(task, current, total, targetTabId) {
       ? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
       : { id: targetTabId };
     if (!tab?.id) throw new Error('NO_TAB');
-    await updateAudioStatus(task.name, 'processing', { processingStartedAt: startedAt });
+    if (chrome.tabs.get && !inGroup(task, await activeGroup(await chrome.tabs.get(tab.id)))) throw new Error('GROUP_CHANGED');
+    await updateAudioStatus(task.name, 'processing', { processingStartedAt: startedAt }, task);
     const downloadWatch = waitForDownloadStarted(
       task.name,
       startedAt,
@@ -832,7 +909,7 @@ async function executeAudioDownloadTask(task, current, total, targetTabId) {
       lastDownloadedAt: Date.now(),
       downloadId: download.id || null,
       downloadFilename: download.filename || ''
-    });
+    }, task);
     await closeDownloadOverlay(tab.id, task.name);
     const cost = ((Date.now() - startedAt) / 1000).toFixed(1);
     addLog('INFO', `[${current}/${total}] 音频成功 | ${cost}s | ${task.name}`);
@@ -840,18 +917,19 @@ async function executeAudioDownloadTask(task, current, total, targetTabId) {
   } catch (err) {
     const cost = ((Date.now() - startedAt) / 1000).toFixed(1);
     addLog('ERROR', `[${current}/${total}] 音频失败 | ${cost}s | ${err.message} | ${task.name}`);
-    await updateAudioStatus(task.name, 'failed', { processingStartedAt: null, lastError: err.message });
+    await updateAudioStatus(task.name, 'failed', { processingStartedAt: null, lastError: err.message }, task);
     return false;
   }
 }
 
-async function updateAudioStatus(name, status, extra = {}) {
+async function updateAudioStatus(name, status, extra = {}, task = {}) {
   const data = await chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory']);
-  const updated = (data.pendingAudio || []).map(a => a.name === name ? { ...a, ...extra, status } : a);
+  const updated = (data.pendingAudio || []).map(a => a.name === name && sameGroup(a, task) ? { ...a, ...extra, status } : a);
   const updates = { pendingAudio: updated };
   if (status === 'done') {
     const history = data.downloadedAudioHistory || [];
-    if (!history.includes(name)) history.push(name);
+    const key = historyKey({ ...task, name });
+    if (!history.includes(key)) history.push(key);
     updates.downloadedAudioHistory = history;
   }
   await chrome.storage.local.set(updates);
@@ -869,14 +947,16 @@ async function addLog(level, message) {
   await chrome.storage.local.set({ logs });
 }
 async function processSingleDownload(fileName) {
+  const groupId = await activeGroup();
   const data = await chrome.storage.local.get(['pendingFiles']);
-  const task = (data.pendingFiles || []).find(f => f.name === fileName);
+  const task = (data.pendingFiles || []).find(f => f.name === fileName && inGroup(f, groupId));
   if (task) await executeDownloadTask(task, 1, 1);
 }
 
 async function processSingleAudioDownload(fileName) {
+  const groupId = await activeGroup();
   const data = await chrome.storage.local.get(['pendingAudio']);
-  const task = (data.pendingAudio || []).find(a => a.name === fileName);
+  const task = (data.pendingAudio || []).find(a => a.name === fileName && inGroup(a, groupId));
   if (!task) {
     await addLog('ERROR', `音频单个下载失败: ${fileName} - NOT_FOUND_IN_AUDIO_LIST`);
     return;

@@ -1,3 +1,5 @@
+import { wasDownloaded } from './group-scope.mjs';
+
 export function parseUploadTimeValue(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const normalized = value.trim().replace(/\//g, '-');
@@ -34,7 +36,7 @@ export function selectBatchTasks(items, {
   const selected = filterNames === undefined ? null : new Set(Array.isArray(filterNames) ? filterNames : []);
   const tasks = items.filter(item => (
     statuses.includes(item.status)
-    && !downloaded.has(item.name)
+    && !wasDownloaded(downloaded, item)
     && (!selected || selected.has(item.name))
     && (minCount <= 0 || (item.downloadCount || 0) >= minCount)
     && isWithinUploadRange(item, uploadStartMs, uploadEndMs)

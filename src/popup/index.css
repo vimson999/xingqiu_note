@@ -12,6 +12,16 @@ button { cursor: pointer; border: none; border-radius: 4px; padding: 6px 10px; f
 .tabs { display: flex; margin-bottom: 10px; border-bottom: 1px solid #ddd; }
 .tab { flex: 1; text-align: center; padding: 8px; cursor: pointer; color: #666; }
 .tab.active { color: #3c78d8; border-bottom: 2px solid #3c78d8; font-weight: bold; }
+.tab { white-space: nowrap; }
+.control-bar.recorder-controls { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.recorder-row { display: grid; grid-template-columns: 82px 55px 45px minmax(0, 1fr); gap: 6px; width: 100%; box-sizing: border-box; text-align: left; padding: 8px; background: white; color: #333; border-bottom: 1px solid #eee; border-radius: 0; }
+.recorder-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recorder-row:hover { background: #eaf2ff; }
+.recorder-heading { font-size: 11px; font-weight: bold; background: #eaeff2; }
+#recorder-list { min-height: 80px; }
+.recorder-detail-label { margin: 8px 0 4px; font-size: 11px; }
+#recorder-detail { width: 100%; box-sizing: border-box; flex: 0 0 170px; resize: none; border: 1px solid #d6dbe0; border-radius: 4px; padding: 8px; font: 11px monospace; background: white; }
+button:disabled { cursor: default; opacity: 0.55; }
 .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
 .tab-content.active { display: flex; }
 

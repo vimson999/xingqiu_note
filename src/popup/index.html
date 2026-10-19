@@ -8,6 +8,7 @@
 <body>
   <div class="header">
     <h3>星球助手 <span id="version">v0.4.4</span></h3>
+    <span id="current-list-group" class="stats"></span>
   </div>
 
   <div class="tabs">
@@ -16,6 +17,7 @@
     <div class="tab" data-tab="doubao">豆包朗读</div>
     <div class="tab" data-tab="upload">上传辅助</div>
     <div class="tab" data-tab="logs">操作日志</div>
+    <div class="tab" data-tab="recorder">接口记录</div>
   </div>
 
   <div id="tab-files" class="tab-content active">
@@ -199,6 +201,20 @@
       <button id="btn-clear-logs" class="danger-btn">清空日志</button>
     </div>
     <div id="log-viewer" class="log-container"></div>
+  </div>
+
+  <div id="tab-recorder" class="tab-content">
+    <div class="control-bar recorder-controls">
+      <button id="btn-recorder-start" class="primary-btn">开始记录</button>
+      <button id="btn-recorder-stop" class="danger-btn" disabled>停止记录</button>
+      <button id="btn-recorder-export" class="primary-btn" disabled>导出 JSON</button>
+      <button id="btn-recorder-clear" class="danger-btn" disabled>清空记录</button>
+    </div>
+    <div id="recorder-status" class="stats" aria-live="polite">尚未开始记录</div>
+    <div class="recorder-row recorder-heading"><span>时间</span><span>方法</span><span>状态</span><span>接口</span></div>
+    <ul id="recorder-list" class="list"></ul>
+    <label class="recorder-detail-label" for="recorder-detail">请求与响应</label>
+    <textarea id="recorder-detail" readonly spellcheck="false"></textarea>
   </div>
 
   <script src="popup.js" type="module"></script>

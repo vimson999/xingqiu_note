@@ -4,6 +4,11 @@
  */
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+function currentContentGroup() {
+  const url = new URL(window.location.href);
+  return url.pathname.match(/^\/group\/(\d+)(?:\/|$)/)?.[1]
+    || url.searchParams.get('groupId') || '28888112822211';
+}
 
 const internalLog = (msg, data = '') => {
   console.log(`%c[ZsxqContent] ${msg}`, 'color: #8e44ad; font-weight: bold;', data);
@@ -243,7 +248,7 @@ async function writeDownloadCount(storageKey, itemName, downloadCount) {
   const items = data[storageKey] || [];
   const writeResults = [];
   const updatedItems = items.map(item => {
-    if (!namesMatch(item.name, itemName)) return item;
+    if (String(item.groupId || '28888112822211') !== currentContentGroup() || !namesMatch(item.name, itemName)) return item;
     writeResults.push({
       name: item.name,
       before: item.downloadCount || 0,
@@ -450,17 +455,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       for (let i = 0; i < 10; i++) { if (!parent) break; const dateEl = parent.querySelector('.date'); if (dateEl) { uploadTime = dateEl.innerText.trim(); break; } parent = parent.parentElement; }
       return name ? { name, uploadTime, downloadCount: 0, status: 'pending' } : null;
     }).filter(f => f);
-    chrome.storage.local.get(['pendingFiles', 'downloadedHistory'], (data) => {
-      const oldFiles = data.pendingFiles || [];
-      const history = data.downloadedHistory || [];
-      const combined = [...oldFiles];
-      newFiles.forEach(nf => {
-        if (history.includes(nf.name)) nf.status = 'done';
-        const idx = combined.findIndex(of => of.name === nf.name);
-        if (idx === -1) combined.push(nf);
-        else { combined[idx].uploadTime = nf.uploadTime; if (history.includes(nf.name)) combined[idx].status = 'done'; }
-      });
-      chrome.storage.local.set({ pendingFiles: combined }, () => sendResponse({ count: combined.length }));
+    chrome.runtime.sendMessage({ type: 'MERGE_SCANNED_ITEMS',
+      payload: { kind: 'pdf', groupId: currentContentGroup(), items: newFiles } }, response => {
+      void chrome.runtime.lastError;
+      sendResponse(response || { count: 0 });
     });
     return true;
   }
@@ -473,20 +471,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return name ? { name, uploadTime, downloadCount: 0, status: 'pending' } : null;
     }).filter(Boolean);
 
-    chrome.storage.local.get(['pendingAudio', 'downloadedAudioHistory'], (data) => {
-      const oldAudio = data.pendingAudio || [];
-      const history = data.downloadedAudioHistory || [];
-      const combined = [...oldAudio];
-      newAudio.forEach(na => {
-        if (history.includes(na.name)) na.status = 'done';
-        const idx = combined.findIndex(old => old.name === na.name);
-        if (idx === -1) combined.push(na);
-        else {
-          combined[idx].uploadTime = na.uploadTime;
-          if (history.includes(na.name)) combined[idx].status = 'done';
-        }
-      });
-      chrome.storage.local.set({ pendingAudio: combined }, () => sendResponse({ count: combined.length, found: newAudio.length }));
+    chrome.runtime.sendMessage({ type: 'MERGE_SCANNED_ITEMS',
+      payload: { kind: 'audio', groupId: currentContentGroup(), items: newAudio } }, response => {
+      void chrome.runtime.lastError;
+      sendResponse(response || { count: 0, found: 0 });
     });
     return true;
   }

@@ -1,4 +1,6 @@
 import { normalizeDownloadFilename } from './download-match.mjs';
+import { topicAttachments } from './topic-attachments.mjs';
+import { sameGroup, wasDownloaded } from './group-scope.mjs';
 
 const AUDIO_EXTENSION_PATTERN = /\.(?:mp3|m4a|wav)$/i;
 
@@ -43,7 +45,7 @@ function normalizeAudioItem(rawItem) {
 
 function getItemIndexForImport(items, importedItem) {
   if (importedItem.fileId) {
-    const byFileId = items.findIndex(item => toOptionalString(item.fileId) === importedItem.fileId);
+    const byFileId = items.findIndex(item => sameGroup(item, importedItem) && toOptionalString(item.fileId) === importedItem.fileId);
     if (byFileId !== -1) return byFileId;
   }
 
@@ -51,6 +53,7 @@ function getItemIndexForImport(items, importedItem) {
   if (!importedName) return -1;
 
   return items.findIndex((item) => {
+    if (!sameGroup(item, importedItem)) return false;
     // Name matching only bridges entries collected before an API import assigned a file ID.
     if (importedItem.fileId && toOptionalString(item.fileId)) return false;
     return normalizeDownloadFilename(item.name) === importedName;
@@ -74,19 +77,16 @@ export function parseAudioSearchResponse(rawResponse) {
     throw new Error('AUDIO_IMPORT_FILES_MISSING');
   }
 
-  const sourceFiles = Array.isArray(responseFiles)
-    ? responseFiles
-    : responseTopics.flatMap(topic => (
-      Array.isArray(topic?.talk?.files)
-        ? topic.talk.files.map(file => ({
-          file,
-          topic_id: topic.topic_id,
-          topic_uid: topic.topic_uid,
-          group: topic.group
-        }))
-        : []
-    ));
-  const items = sourceFiles.map(normalizeAudioItem).filter(Boolean);
+  const sourceFiles = topicAttachments(response.resp_data);
+  const unique = new Map();
+  for (const { topic, file, audioSource } of sourceFiles) {
+    const item = normalizeAudioItem({ ...topic, file });
+    if (!item) continue;
+    if (audioSource === 'content_voice') item.audioSource = audioSource;
+    const key = `${item.groupId}:${item.fileId || item.name}`;
+    unique.set(key, { ...unique.get(key), ...item });
+  }
+  const items = [...unique.values()];
   return {
     items,
     nextIndex: Array.isArray(responseFiles) && Number.isFinite(Number(response.resp_data.index))
@@ -99,18 +99,16 @@ export function parseAudioSearchResponse(rawResponse) {
 
 export function mergeImportedAudioItems(existingItems = [], importedItems = [], downloadedAudioHistory = []) {
   const items = existingItems.map(item => ({ ...item }));
-  const downloadedNames = new Set(
-    downloadedAudioHistory
-      .map(name => normalizeDownloadFilename(name))
-      .filter(Boolean)
-  );
+  const downloadedNames = new Set(downloadedAudioHistory);
+  const normalizedNames = new Set(downloadedAudioHistory.map(normalizeDownloadFilename));
   let addedCount = 0;
   let updatedCount = 0;
 
   for (const importedItem of importedItems) {
     const existingIndex = getItemIndexForImport(items, importedItem);
     if (existingIndex === -1) {
-      const isDownloaded = downloadedNames.has(normalizeDownloadFilename(importedItem.name));
+      const isDownloaded = wasDownloaded(downloadedNames, importedItem)
+        || wasDownloaded(normalizedNames, { ...importedItem, name: normalizeDownloadFilename(importedItem.name) });
       items.push({
         ...importedItem,
         status: isDownloaded ? 'done' : 'pending'

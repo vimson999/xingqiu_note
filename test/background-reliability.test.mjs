@@ -12,7 +12,7 @@ function event() {
   };
 }
 
-async function background(t, initial = {}) {
+async function background(t, initial = {}, activeUrl = 'https://wx.zsxq.com/group/28888112822211') {
   const storage = structuredClone(initial);
   const messages = [];
   const writes = [];
@@ -41,7 +41,7 @@ async function background(t, initial = {}) {
     tabs: {
       async query() {
         queryCount++;
-        return [{ id: queryCount === 1 ? 7 : 99 }];
+        return [{ id: queryCount === 1 ? 7 : 99, url: activeUrl }];
       },
       sendMessage(tabId, message, callback) {
         messages.push({ tabId, ...message });
@@ -68,12 +68,14 @@ async function background(t, initial = {}) {
       });
     },
     async runAudio(payload) {
-      listener({ type: 'START_BATCH_AUDIO_DOWNLOAD', payload }, {}, () => {});
-      const deadline = Date.now() + 2000;
-      while (storage.isDownloading !== false) {
-        if (Date.now() > deadline) throw new Error('Audio batch did not finish');
-        await new Promise(resolve => original.setTimeout(resolve, 5));
-      }
+      await new Promise((resolve, reject) => {
+        const timer = original.setTimeout(() => reject(new Error('Audio batch did not finish')), 2000);
+        listener({ type: 'START_BATCH_AUDIO_DOWNLOAD', payload }, {}, result => {
+          clearTimeout(timer);
+          if (!result?.success) reject(new Error(result?.error));
+          else resolve();
+        });
+      });
     }
   };
 }
@@ -100,6 +102,23 @@ test('PDF message sort determines the fixed queue before limiting', async t => {
   await app.send('START_BATCH_DOWNLOAD', { limit: 2, sort: 'count_desc' });
   assert.deepEqual(app.storage.fileBatchState.taskNames, ['popular.pdf', 'other.pdf']);
   assert.equal(app.messages.find(message => message.type === 'TRIGGER_CLICK').payload.fileName, 'popular.pdf');
+});
+
+test('same-name files in another group are excluded from the queue and status updates', async t => {
+  const groupId = '88885882121542';
+  const app = await background(t, {
+    downloadedHistory: ['shared.pdf'],
+    pendingFiles: [
+      { name: 'shared.pdf', status: 'done' },
+      { name: 'shared.pdf', groupId, status: 'pending', downloadCount: 50 }
+    ]
+  }, `https://wx.zsxq.com/group/${groupId}`);
+  await app.send('START_BATCH_DOWNLOAD', { limit: 1 });
+  assert.equal(app.storage.pendingFiles[0].status, 'done');
+  assert.equal(app.storage.pendingFiles[0].downloadId, undefined);
+  assert.equal(app.storage.pendingFiles[1].status, 'done');
+  assert.ok(app.storage.downloadedHistory.includes(`group:${groupId}:shared.pdf`));
+  assert.equal(app.storage.batchDownloadProgress.success, 1);
 });
 
 test('audio batch includes unknown dates without date bounds and keeps the original tab', async t => {
