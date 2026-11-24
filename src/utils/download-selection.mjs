@@ -18,6 +18,10 @@ export function isWithinUploadRange(item, startMs, endMs) {
   return time !== null && (!hasStart || time >= startMs) && (!hasEnd || time <= endMs);
 }
 
+export function filterItemsByUploadRange(items, startMs, endMs) {
+  return items.filter(item => isWithinUploadRange(item, startMs, endMs));
+}
+
 export function compareDownloadItems(left, right, sort = 'time_desc') {
   if (sort === 'count_desc') return (right.downloadCount || 0) - (left.downloadCount || 0);
   const leftTime = parseUploadTimeValue(left.uploadTime);

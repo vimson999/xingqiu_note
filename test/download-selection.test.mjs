@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isWithinUploadRange, selectBatchTasks } from '../src/utils/download-selection.mjs';
+import { filterItemsByUploadRange, isWithinUploadRange, selectBatchTasks } from '../src/utils/download-selection.mjs';
 
 const items = [
   { name: 'older', status: 'pending', uploadTime: '2026-09-01 12:00', downloadCount: 40 },
@@ -38,4 +38,12 @@ test('unknown dates stay visible without a date filter but are excluded with a b
   assert.equal(isWithinUploadRange(items[0], start, start), true);
   assert.equal(isWithinUploadRange(items[0], start + 1, null), false);
   assert.equal(isWithinUploadRange(items[0], null, start - 1), false);
+});
+
+test('filters displayed items by inclusive upload-time bounds', () => {
+  const start = new Date('2026-09-02T12:00').getTime();
+  assert.deepEqual(
+    filterItemsByUploadRange(items, start, null).map(item => item.name),
+    ['newer', 'failed']
+  );
 });

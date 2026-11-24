@@ -4,7 +4,7 @@ import { mergeImportedAudioItems, parseAudioSearchResponse } from '../utils/audi
 import { mergeImportedFileItems, parseFileSearchResponse } from '../utils/file-response-import.mjs';
 import { buildListJsonExport } from '../utils/list-json-export.mjs';
 import { getMp3VideoWorkflowDisplay } from '../utils/remote-history.mjs';
-import { compareDownloadItems, isWithinUploadRange, parseUploadTimeValue } from '../utils/download-selection.mjs';
+import { compareDownloadItems, filterItemsByUploadRange, isWithinUploadRange, parseUploadTimeValue } from '../utils/download-selection.mjs';
 import { escapeHtml } from '../utils/html.mjs';
 import { initApiRecorderPanel } from './api-recorder-panel.mjs';
 import { LEGACY_GROUP_ID, pageGroupId, inGroup, wasDownloaded, historyInGroup } from '../utils/group-scope.mjs';
@@ -840,6 +840,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   ['audio-upload-start-time', 'audio-upload-end-time'].forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => renderFromStorage());
   });
+  ['upload-start-time', 'upload-end-time'].forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => renderFromStorage());
+  });
   audioSort?.addEventListener('change', () => renderFromStorage());
 
   // 6. 存储变化实时更新 UI
@@ -886,6 +889,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const keywords = filterVal.split('|');
       files = files.filter(f => keywords.some(k => f.name.toLowerCase().includes(k.toLowerCase())));
     }
+    files = filterItemsByUploadRange(
+      files,
+      getDateTimeInputMs('upload-start-time'),
+      getDateTimeInputMs('upload-end-time')
+    );
 
     // 2. 排序
     const sortVal = selectSort.value;
